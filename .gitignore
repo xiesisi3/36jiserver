@@ -1,0 +1,22 @@
+# Python 编译缓存
+__pycache__/
+*.pyc
+*.pyo
+
+# 虚拟环境（非常重要）
+venv/
+.venv/
+env/
+ENV/
+
+# PyCharm 配置
+.idea/
+.vscode/
+
+# 日志和数据文件
+*.log
+*.db
+*.sqlite3
+
+# 环境变量
+.env
