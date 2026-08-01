@@ -108,11 +108,11 @@ def skill_pierce(attacker, defender, attack_slot, defend_slot, context=None):
     extra_damage_mod = force * 1.5 / 100.0
     alive_slots = _get_alive_slots(defender.get("team", []))
     if len(alive_slots) >= 2:
-        result["multi_targets"] = [{
-            "target_slot": alive_slots[1],
-            "damage_mod": extra_damage_mod,
-            "skip_defender_skills": True,
-        }]
+        # 穿透技能：同时攻击第一个存活槽位（原伤害）和第二个存活槽位（额外伤害加成）
+        result["multi_targets"] = [
+            {"target_slot": alive_slots[0], "damage_mod": 1.0, "skip_defender_skills": True},
+            {"target_slot": alive_slots[1], "damage_mod": extra_damage_mod, "skip_defender_skills": True},
+        ]
     return result
 
 
@@ -296,11 +296,11 @@ def skill_warrior(attacker, defender, attack_slot, defend_slot, context=None):
     result["damage_mod"] = 1.0 + (charm * 0.01)
     alive_slots = _get_alive_slots(defender.get("team", []))
     if len(alive_slots) >= 2:
-        result["multi_targets"] = [{
-            "target_slot": alive_slots[1],
-            "damage_mod": 0.8,
-            "skip_defender_skills": True,
-        }]
+        # 武卒技能：同时攻击第一个存活槽位（原伤害）和第二个存活槽位（80%伤害）
+        result["multi_targets"] = [
+            {"target_slot": alive_slots[0], "damage_mod": 1.0, "skip_defender_skills": True},
+            {"target_slot": alive_slots[1], "damage_mod": 0.8, "skip_defender_skills": True},
+        ]
     return result
 
 
@@ -318,16 +318,15 @@ def skill_melee(attacker, defender, attack_slot, defend_slot, context=None):
     intel = general.get("intelligence", 0)
     damage_mod = 1.0 + (intel * 0.01)
     alive_slots = _get_alive_slots(defender.get("team", []))
-    multi = []
-    for _ in range(3):
-        if not alive_slots:
+    # 混战技能：第一个存活槽位必定被攻击，其余最多2个槽位随机选择
+    multi = [{"target_slot": alive_slots[0], "damage_mod": damage_mod, "skip_defender_skills": True}]
+    remaining = [s for s in alive_slots if s != alive_slots[0]]
+    for _ in range(2):
+        if not remaining:
             break
-        target = random.choice(alive_slots)
-        multi.append({
-            "target_slot": target,
-            "damage_mod": damage_mod,
-            "skip_defender_skills": True,
-        })
+        target = random.choice(remaining)
+        multi.append({"target_slot": target, "damage_mod": damage_mod, "skip_defender_skills": True})
+        remaining.remove(target)
     result["multi_targets"] = multi
     return result
 
@@ -376,11 +375,11 @@ def skill_thrust(attacker, defender, attack_slot, defend_slot, context=None):
     result["damage_mod"] = 1.0 + (general.get("force", 0) * 0.01)
     alive_slots = _get_alive_slots(defender.get("team", []))
     if len(alive_slots) >= 2:
-        result["multi_targets"] = [{
-            "target_slot": alive_slots[1],
-            "damage_mod": 0.8,
-            "skip_defender_skills": True,
-        }]
+        # 突刺技能：同时攻击第一个存活槽位（原伤害）和第二个存活槽位（80%伤害）
+        result["multi_targets"] = [
+            {"target_slot": alive_slots[0], "damage_mod": 1.0, "skip_defender_skills": True},
+            {"target_slot": alive_slots[1], "damage_mod": 0.8, "skip_defender_skills": True},
+        ]
     return result
 
 
@@ -398,16 +397,15 @@ def skill_volley(attacker, defender, attack_slot, defend_slot, context=None):
     charm = general.get("charisma", 0)
     damage_mod = 1.0 + (charm * 0.01)
     alive_slots = _get_alive_slots(defender.get("team", []))
-    multi = []
-    for _ in range(3):
-        if not alive_slots:
+    # 乱射技能：第一个存活槽位必定被攻击，其余最多2个槽位随机选择
+    multi = [{"target_slot": alive_slots[0], "damage_mod": damage_mod, "skip_defender_skills": True}]
+    remaining = [s for s in alive_slots if s != alive_slots[0]]
+    for _ in range(2):
+        if not remaining:
             break
-        target = random.choice(alive_slots)
-        multi.append({
-            "target_slot": target,
-            "damage_mod": damage_mod,
-            "skip_defender_skills": True,
-        })
+        target = random.choice(remaining)
+        multi.append({"target_slot": target, "damage_mod": damage_mod, "skip_defender_skills": True})
+        remaining.remove(target)
     result["multi_targets"] = multi
     return result
 

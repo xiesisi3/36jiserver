@@ -87,7 +87,11 @@ def _aggregate_losses(troop_participation, rounds):
             final_count = sum(
                 slot.get("数量", 0) for slot in final_troop.get("team", []) if slot
             )
-            result[tid] = {"troops_lost": 0, "soldiers_lost": max(0, init_count - final_count)}
+            # 部队存在于最终回合数据中但兵力为0，说明已被消灭，应视为阵亡
+            if final_count == 0:
+                result[tid] = {"troops_lost": 1, "soldiers_lost": init_count}
+            else:
+                result[tid] = {"troops_lost": 0, "soldiers_lost": max(0, init_count - final_count)}
         else:
             result[tid] = {"troops_lost": 1, "soldiers_lost": init_count}
 
