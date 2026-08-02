@@ -1,4 +1,5 @@
 """消息/好友 对外接口"""
+import json
 import logging
 from core.connection import send_message, is_user_online
 from message.protocol import make_response
@@ -90,6 +91,19 @@ async def handle_message_delete(websocket, client_id, msg):
     if not user_id or not message_id:
         await send_message(websocket, make_response("error", "user_id 和 message_id 不能为空", ""))
         return
+
+    target = await get_message_by_id(message_id)
+    if target is None:
+        await send_message(websocket, make_response("error", "消息不存在", ""))
+        return
+
+    if target.get("msg_type") == 5:
+        extra = target.get("extra_data")
+        if isinstance(extra, str):
+            extra = json.loads(extra)
+        if extra and extra.get("replied", 0) == 0:
+            await send_message(websocket, make_response("error", "未回复的军团申请无法删除", ""))
+            return
 
     result = await delete_message(message_id, user_id)
     if result == "not_found":

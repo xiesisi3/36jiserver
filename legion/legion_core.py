@@ -4,6 +4,7 @@ import aiomysql
 from data.global_data import (
     legion_cache, legion_member_cache, legion_member_index,
     user_resource_cache, user_nation_cache, troop_cache,
+    fief_cache, towns_cache, fief_item_effects_cache,
 )
 from legion.legion_db import (
     create_tables, get_all_legions, get_legion_by_id, get_legion_by_name,
@@ -11,13 +12,24 @@ from legion.legion_db import (
     get_all_legion_members, get_member_by_user, get_members_by_legion,
     insert_legion_member, update_member_role, update_member_field, delete_member,
     get_application, upsert_application, update_application_status, get_pending_applications,
+    get_all_fief_item_effects, get_fief_item_effect, upsert_fief_item_effect, delete_fief_item_effect,
 )
 from notification.notification_core import publish_system_message
+from notification.notification_db import mark_application_replied
 from user_resource.user_resource_db import update_user_resource_field
 from core.connection import send_to_user
 from core.database import get_pool
 from troop.troop_utils import calculate_max_carry_food
 from server_timer.server_timer_core import get_uptime_ms
+from data.legion_exchange_config import (
+    GRANARY_STAGES, CHEST_TICKET_STAGES, BUFF_STAGES, SPECIAL_STAGES,
+    SKILL_BOOK_LIST, SKILL_BOOK_PRICE,
+    PEARL_CONFIG, PEARL_MAX_TOWN_LEVEL,
+    get_granary_stage_cost, get_granary_stage_max,
+    get_chest_ticket_stage_cost, get_buff_stage_cost, get_special_stage_cost,
+    get_item_price, get_item_unlock_stage, get_all_unlockable_items,
+)
+from items.item_core import add_item_to_user
 
 logger = logging.getLogger('36ji-server')
 
@@ -46,7 +58,14 @@ async def init_legions():
             legion_member_index[lid] = set()
         legion_member_index[lid].add(m["user_id"])
 
-    logger.info(f"军团模块初始化完成: {len(legion_cache)} 个军团, {len(legion_member_cache)} 个成员")
+    # 加载封地灵珠效果到全局缓存
+    effects = await get_all_fief_item_effects()
+    fief_item_effects_cache.clear()
+    for e in effects:
+        fief_item_effects_cache[(e["user_id"], e["town_id"])] = float(e["bonus"])
+
+    logger.info(f"军团模块初始化完成: {len(legion_cache)} 个军团, {len(legion_member_cache)} 个成员, "
+                f"{len(fief_item_effects_cache)} 个灵珠效果")
 
 
 def _get_leader_user_id(legion_id):
@@ -85,6 +104,8 @@ def _build_legion_detail(legion_id):
                 "join_time": str(m["join_time"]) if m.get("join_time") else "",
             })
 
+    members.sort(key=lambda x: (x["role"], x["join_time"]))
+
     return {
         "id": legion["id"],
         "nation_id": legion["nation_id"],
@@ -94,6 +115,10 @@ def _build_legion_detail(legion_id):
         "available_combat_score": legion["available_combat_score"],
         "granary_max": legion["granary_max"],
         "granary_current": legion["granary_current"],
+        "granary_stage": legion.get("granary_stage", 0),
+        "chest_ticket_stage": legion.get("chest_ticket_stage", 0),
+        "buff_stage": legion.get("buff_stage", 0),
+        "special_stage": legion.get("special_stage", 0),
         "member_count": len(members),
         "create_time": str(legion["create_time"]) if legion.get("create_time") else "",
         "members": members,
@@ -107,14 +132,9 @@ def get_legions_by_nation(nation_id):
     result = []
     for lid, legion in legion_cache.items():
         if legion["nation_id"] == nation_id:
-            result.append({
-                "id": legion["id"],
-                "name": legion["name"],
-                "description": legion["description"],
-                "member_count": _get_legion_member_count(lid),
-                "total_combat_score": legion["total_combat_score"],
-                "create_time": str(legion["create_time"]) if legion.get("create_time") else "",
-            })
+            detail = _build_legion_detail(lid)
+            if detail:
+                result.append(detail)
     return result
 
 
@@ -219,8 +239,11 @@ async def apply_join_legion(user_id, legion_id):
         receiver_id=leader_user_id,
         receiver_name=leader_name,
         title="军团申请",
-        content=f"玩家 {player_name} 申请加入你的军团【{legion['name']}】",
+        content=f"玩家 【{player_name}】 申请加入你的军团【{legion['name']}】",
         category="军团",
+        msg_type=5,
+        sender_id=user_id,
+        extra={"legion_id": legion_id, "replied": 0},
     )
 
     logger.info(f"军团申请: {player_name}({user_id}) → {legion['name']}({legion_id})")
@@ -248,6 +271,8 @@ async def handle_application(leader_user_id, application_user_id, legion_id, acc
 
         await update_application_status(legion_id, application_user_id, 1)
 
+        await mark_application_replied(leader_user_id, application_user_id)
+
         await insert_legion_member({
             "legion_id": legion_id,
             "user_id": application_user_id,
@@ -270,9 +295,10 @@ async def handle_application(leader_user_id, application_user_id, legion_id, acc
         await publish_system_message(
             receiver_id=application_user_id,
             receiver_name=player_name,
-            title="军团申请通过",
-            content=f"你已加入军团【{legion_name}】",
+            title="军团申请结果",
+            content=f"你申请加入军团【{legion_name}】已通过",
             category="军团",
+            msg_type=4,
         )
 
         # 玩家在线则实时推送加入军团通知
@@ -282,7 +308,7 @@ async def handle_application(leader_user_id, application_user_id, legion_id, acc
             "data": {
                 "legion_id": legion_id,
                 "legion_name": legion_name,
-                "msg": f"恭喜 {player_name} 玩家成功加入军团【{legion_name}】",
+                "msg": f"恭喜 【{player_name}】 玩家成功加入军团【{legion_name}】",
             },
         })
 
@@ -291,15 +317,18 @@ async def handle_application(leader_user_id, application_user_id, legion_id, acc
     else:
         await update_application_status(legion_id, application_user_id, 2)
 
+        await mark_application_replied(leader_user_id, application_user_id)
+
         player_name = (user_resource_cache.get(application_user_id, {}) or {}).get("player_name", "")
         legion_name = legion_cache[legion_id]["name"]
 
         await publish_system_message(
             receiver_id=application_user_id,
             receiver_name=player_name,
-            title="军团申请被拒绝",
-            content=f"你申请加入军团【{legion_name}】的请求已被拒绝",
+            title="军团申请结果",
+            content=f"你申请加入军团【{legion_name}】已被拒绝",
             category="军团",
+            msg_type=4,
         )
 
         logger.info(f"军团申请拒绝: {player_name}({application_user_id}) 被 {legion_name} 拒绝")
@@ -659,3 +688,236 @@ async def add_legion_combat_reward(user_id, score):
     new_current_score = member["personal_current_score"] + int_score
     await update_member_field(user_id, "personal_current_score", new_current_score)
     member["personal_current_score"] = new_current_score
+
+
+# ==================== 军团阶段解锁（军团长/副军团长操作） ====================
+
+
+def _get_stage_config(category):
+    """获取指定类型的阶段配置列表"""
+    if category == "granary":
+        return GRANARY_STAGES, "granary_stage", get_granary_stage_cost
+    elif category == "chest_ticket":
+        return CHEST_TICKET_STAGES, "chest_ticket_stage", get_chest_ticket_stage_cost
+    elif category == "buff":
+        return BUFF_STAGES, "buff_stage", get_buff_stage_cost
+    elif category == "special":
+        return SPECIAL_STAGES, "special_stage", get_special_stage_cost
+    return None, None, None
+
+
+async def unlock_legion_stage(operator_user_id, category):
+    """军团长/副军团长消耗军团可用来解锁兑换阶段"""
+    # 权限校验：只有军团长和副军团长可以操作
+    operator_member = legion_member_cache.get(operator_user_id)
+    if operator_member is None:
+        return False, "你不在军团中"
+    if operator_member["role"] not in (ROLE_LEADER, ROLE_VICE):
+        return False, "只有军团长和副军团长可以解锁阶段"
+
+    legion_id = operator_member["legion_id"]
+    legion = legion_cache.get(legion_id)
+    if legion is None:
+        return False, "军团不存在"
+
+    stages, field_name, get_cost = _get_stage_config(category)
+    if stages is None:
+        return False, "未知的解锁类型"
+
+    current_stage = legion.get(field_name, 0)
+    # 宝箱货票类阶段范围 0-8，其他为 1-4
+    max_stage = max(s["stage"] for s in stages)
+    if current_stage >= max_stage:
+        return False, "已达最高阶段，无法继续解锁"
+
+    next_stage = current_stage + 1
+    cost = get_cost(next_stage)
+    if cost is None:
+        return False, f"阶段{next_stage}配置不存在"
+
+    if legion["available_combat_score"] < cost:
+        return False, f"军团可用积分不足，需要{cost}，当前{legion['available_combat_score']}"
+
+    # 扣除军团积分并更新阶段
+    new_available = legion["available_combat_score"] - cost
+    await update_legion_field(legion_id, "available_combat_score", new_available)
+    legion["available_combat_score"] = new_available
+
+    await update_legion_field(legion_id, field_name, next_stage)
+    legion[field_name] = next_stage
+
+    # 如果是粮仓扩展，还需要更新粮仓上限
+    if category == "granary":
+        new_max = get_granary_stage_max(next_stage)
+        if new_max is not None:
+            await update_legion_field(legion_id, "granary_max", new_max)
+            legion["granary_max"] = new_max
+
+    category_names = {
+        "granary": "粮仓上限",
+        "chest_ticket": "宝箱与货票",
+        "buff": "加成类道具",
+        "special": "特殊道具",
+    }
+    logger.info(f"军团阶段解锁: 军团={legion['name']}({legion_id}), "
+                f"类型={category_names.get(category, category)}, 阶段={next_stage}, 消耗积分={cost}")
+
+    return True, {
+        "category": category,
+        "stage": next_stage,
+        "cost": cost,
+        "available_combat_score": new_available,
+    }
+
+
+# ==================== 军团积分兑换道具（玩家个人操作） ====================
+
+
+async def exchange_legion_item(user_id, item_name, quantity=1):
+    """玩家使用个人当前积分兑换军团已解锁的道具"""
+    if quantity <= 0:
+        return False, "兑换数量必须为正数"
+
+    member = legion_member_cache.get(user_id)
+    if member is None:
+        return False, "你不在军团中"
+
+    legion_id = member["legion_id"]
+    legion = legion_cache.get(legion_id)
+    if legion is None:
+        return False, "军团不存在"
+
+    # 检查道具是否已解锁
+    unlock_info = get_item_unlock_stage(item_name)
+    if unlock_info is None:
+        return False, f"道具【{item_name}】不在兑换列表中"
+    unlock_category, required_stage = unlock_info
+
+    if unlock_category == "chest_ticket":
+        current_stage = legion.get("chest_ticket_stage", 0)
+    elif unlock_category == "buff":
+        current_stage = legion.get("buff_stage", 0)
+    elif unlock_category == "special":
+        current_stage = legion.get("special_stage", 0)
+    else:
+        return False, "未知道具类型"
+
+    if current_stage < required_stage:
+        return False, f"道具【{item_name}】尚未解锁，需要军团解锁阶段{required_stage}，当前{current_stage}"
+
+    # 获取价格
+    price = get_item_price(item_name)
+    if price is None:
+        return False, f"道具【{item_name}】价格未配置"
+
+    total_price = price * quantity
+    if member["personal_current_score"] < total_price:
+        return False, f"个人积分不足，需要{total_price}，当前{member['personal_current_score']}"
+
+    # 扣除个人积分
+    new_score = member["personal_current_score"] - total_price
+    await update_member_field(user_id, "personal_current_score", new_score)
+    member["personal_current_score"] = new_score
+
+    # 发放道具
+    result = await add_item_to_user(user_id, item_name, quantity)
+    if "error" in result:
+        # 道具发放失败，回滚积分
+        await update_member_field(user_id, "personal_current_score", member["personal_current_score"] + total_price)
+        member["personal_current_score"] = member["personal_current_score"] + total_price
+        return False, result["error"]
+
+    logger.info(f"军团兑换: user={user_id}, item={item_name}×{quantity}, "
+                f"消耗积分={total_price}, 剩余={new_score}")
+
+    return True, {
+        "item_name": item_name,
+        "quantity": quantity,
+        "price": price,
+        "total_price": total_price,
+        "personal_current_score": new_score,
+        "item_result": result,
+    }
+
+
+# ==================== 查询可兑换列表 ====================
+
+
+def get_legion_exchange_items(user_id):
+    """获取当前军团已解锁的可兑换物品列表及价格"""
+    member = legion_member_cache.get(user_id)
+    if member is None:
+        return None, "你不在军团中"
+
+    legion = legion_cache.get(member["legion_id"])
+    if legion is None:
+        return None, "军团不存在"
+
+    items = get_all_unlockable_items(
+        legion.get("chest_ticket_stage", 0),
+        legion.get("buff_stage", 0),
+        legion.get("special_stage", 0),
+    )
+
+    return True, {
+        "legion_id": member["legion_id"],
+        "personal_current_score": member["personal_current_score"],
+        "chest_ticket_stage": legion.get("chest_ticket_stage", 0),
+        "buff_stage": legion.get("buff_stage", 0),
+        "special_stage": legion.get("special_stage", 0),
+        "exchange_items": items,
+    }
+
+
+# ==================== 灵珠使用（土灵珠/水灵珠） ====================
+
+
+async def use_pearl_on_fief(user_id, item_name, town_id):
+    """在封地城池上使用土灵珠/水灵珠，提高该城池资源收益"""
+    if item_name not in PEARL_CONFIG:
+        return False, "该道具不是灵珠"
+
+    pearl_cfg = PEARL_CONFIG[item_name]
+
+    # 校验城池存在且等级≤3
+    town = towns_cache.get(town_id)
+    if town is None:
+        return False, "城池不存在"
+    if town.get("level", 1) > PEARL_MAX_TOWN_LEVEL:
+        return False, f"灵珠只能对等级≤{PEARL_MAX_TOWN_LEVEL}的城池使用，当前城池等级{town.get('level')}"
+
+    # 校验玩家在该城池有封地
+    has_fief = False
+    for fid, fief in fief_cache.items():
+        if fief["user_id"] == user_id and fief["town_id"] == town_id:
+            has_fief = True
+            break
+    if not has_fief:
+        return False, "你在该城池没有封地，无法使用灵珠"
+
+    # 检查是否已有灵珠效果
+    cache_key = (user_id, town_id)
+    existing_bonus = fief_item_effects_cache.get(cache_key)
+
+    if existing_bonus is not None:
+        # 水灵珠 → 土灵珠：拒绝
+        if pearl_cfg.get("cannot_downgrade") and existing_bonus > pearl_cfg["bonus"]:
+            return False, f"该城池已使用水灵珠（+{existing_bonus}），效果更优，无法替换为土灵珠"
+        # 土灵珠 → 水灵珠：覆盖
+        if existing_bonus == pearl_cfg["bonus"]:
+            return False, f"该城池已使用{item_name}，效果相同"
+
+    # 写入数据库
+    await upsert_fief_item_effect(user_id, town_id, item_name, pearl_cfg["bonus"])
+    # 更新缓存
+    fief_item_effects_cache[cache_key] = pearl_cfg["bonus"]
+
+    logger.info(f"灵珠使用: user={user_id}, item={item_name}, town_id={town_id}, "
+                f"bonus={pearl_cfg['bonus']}, 旧bonus={existing_bonus}")
+
+    return True, {
+        "town_id": town_id,
+        "item_name": item_name,
+        "bonus": pearl_cfg["bonus"],
+        "description": pearl_cfg["description"],
+    }

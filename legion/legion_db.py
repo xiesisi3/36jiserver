@@ -48,6 +48,30 @@ async def create_tables():
                     INDEX idx_legion_status (legion_id, status)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='军团申请记录表'
             """)
+            await cur.execute("""
+                CREATE TABLE IF NOT EXISTS fief_item_effects (
+                    id          INT AUTO_INCREMENT PRIMARY KEY COMMENT '记录唯一ID',
+                    user_id     VARCHAR(32)    NOT NULL COMMENT '玩家ID',
+                    town_id     INT            NOT NULL COMMENT '城池ID',
+                    item_name   VARCHAR(32)    NOT NULL COMMENT '道具名称(土灵珠/水灵珠)',
+                    bonus       DECIMAL(4,2)   NOT NULL COMMENT '资源加成值',
+                    create_time TIMESTAMP      DEFAULT CURRENT_TIMESTAMP COMMENT '使用时间',
+                    UNIQUE KEY uk_user_town (user_id, town_id),
+                    INDEX idx_user_id (user_id)
+                ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='封地灵珠效果表'
+            """)
+            # 为已有数据库增加军团兑换阶段字段（兼容旧表）
+            alter_columns = [
+                ("legions", "granary_stage", "INT NOT NULL DEFAULT 0 COMMENT '粮仓扩展阶段 0-9'"),
+                ("legions", "chest_ticket_stage", "INT NOT NULL DEFAULT 0 COMMENT '宝箱货票解锁阶段 0-8'"),
+                ("legions", "buff_stage", "INT NOT NULL DEFAULT 0 COMMENT '加成类道具解锁阶段 0-4'"),
+                ("legions", "special_stage", "INT NOT NULL DEFAULT 0 COMMENT '特殊道具解锁阶段 0-4'"),
+            ]
+            for table, col, definition in alter_columns:
+                try:
+                    await cur.execute(f"ALTER TABLE {table} ADD COLUMN {col} {definition}")
+                except Exception:
+                    pass
             await cur.execute("SET SESSION sql_notes = 1")
 
 
@@ -95,6 +119,7 @@ async def update_legion_field(legion_id, field_name, value):
     allowed_fields = {
         "total_combat_score", "available_combat_score",
         "granary_max", "granary_current",
+        "granary_stage", "chest_ticket_stage", "buff_stage", "special_stage",
     }
     if field_name not in allowed_fields:
         raise ValueError(f"不允许更新的字段: {field_name}")
@@ -234,3 +259,48 @@ async def get_pending_applications(legion_id):
                 (legion_id,)
             )
             return await cur.fetchall()
+
+
+# ==================== 封地灵珠效果表 CRUD ====================
+
+
+async def get_all_fief_item_effects():
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("SELECT * FROM fief_item_effects")
+            return await cur.fetchall()
+
+
+async def get_fief_item_effect(user_id, town_id):
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                "SELECT * FROM fief_item_effects WHERE user_id = %s AND town_id = %s",
+                (user_id, town_id)
+            )
+            return await cur.fetchone()
+
+
+async def upsert_fief_item_effect(user_id, town_id, item_name, bonus):
+    """插入或更新灵珠效果（水灵珠覆盖土灵珠）"""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """INSERT INTO fief_item_effects (user_id, town_id, item_name, bonus)
+                   VALUES (%s, %s, %s, %s)
+                   ON DUPLICATE KEY UPDATE item_name = %s, bonus = %s""",
+                (user_id, town_id, item_name, bonus, item_name, bonus)
+            )
+
+
+async def delete_fief_item_effect(user_id, town_id):
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM fief_item_effects WHERE user_id = %s AND town_id = %s",
+                (user_id, town_id)
+            )

@@ -1,4 +1,4 @@
-from core.connection import send_message, bind_user
+from core.connection import send_message, bind_user, kick_old_client
 from message.protocol import make_response
 from system_user.system_user_core import verify_credentials, register_user
 from system_log.system_log_core import record_login_log, record_register_log
@@ -54,6 +54,7 @@ async def handle_login(websocket, client_id, msg):
             "nation_id": nation_id,
             "has_fief": has_fief,
         }))
+        await kick_old_client(user["id"])
         bind_user(client_id, user["id"])
         await record_login_log(user["id"], True)
     else:

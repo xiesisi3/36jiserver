@@ -105,6 +105,10 @@ from legion.legion_interface import (
     handle_legion_detail,
     handle_legion_supply,
     handle_legion_granary_supply,
+    handle_legion_unlock,
+    handle_legion_exchange,
+    handle_legion_exchange_list,
+    handle_pearl_use,
 )
 
 logger = logging.getLogger('36ji-server')
@@ -209,6 +213,10 @@ HANDLERS = {
     "legion_detail": handle_legion_detail,
     "legion_supply": handle_legion_supply,
     "legion_granary_supply": handle_legion_granary_supply,
+    "legion_unlock": handle_legion_unlock,
+    "legion_exchange": handle_legion_exchange,
+    "legion_exchange_list": handle_legion_exchange_list,
+    "pearl_use": handle_pearl_use,
 }
 
 

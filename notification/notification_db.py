@@ -17,7 +17,8 @@ async def create_tables():
                     title             VARCHAR(200) DEFAULT NULL COMMENT '消息标题',
                     content           TEXT                     COMMENT '消息正文',
                     category          VARCHAR(20)  DEFAULT NULL COMMENT '分类(战斗/城池/外交/活动/公告/系统)',
-                    msg_type          TINYINT      NOT NULL COMMENT '1=系统消息 2=好友申请 3=好友私聊 4=申请结果',
+                    msg_type          TINYINT      NOT NULL COMMENT '1=系统消息 2=好友申请 3=好友私聊 4=申请结果 5=军团申请',
+                    extra_data        JSON         DEFAULT NULL COMMENT '扩展数据(军团申请:{"legion_id":1,"replied":0})',
                     is_read           TINYINT      NOT NULL DEFAULT 0 COMMENT '接收方是否已读',
                     sender_deleted    TINYINT      NOT NULL DEFAULT 0 COMMENT '发送方删除标记',
                     receiver_deleted  TINYINT      NOT NULL DEFAULT 0 COMMENT '接收方删除标记',
@@ -42,6 +43,14 @@ async def create_tables():
                     INDEX idx_friend_status (friend_id, status)
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='好友表'
             """)
+            # 为已有数据库增加 extra_data 字段（兼容旧表）
+            try:
+                await cur.execute(
+                    "ALTER TABLE messages ADD COLUMN extra_data JSON DEFAULT NULL "
+                    "COMMENT '扩展数据(军团申请:{\"legion_id\":1,\"replied\":0})'"
+                )
+            except Exception:
+                pass
             await cur.execute("SET SESSION sql_notes = 1")
 
 
@@ -53,7 +62,7 @@ async def insert_message(data):
     fields = [
         "sender_id", "sender_name", "receiver_id", "receiver_name",
         "title", "content", "category", "msg_type",
-        "is_read", "sender_deleted", "receiver_deleted",
+        "extra_data", "is_read", "sender_deleted", "receiver_deleted",
     ]
     placeholders = ", ".join(["%s"] * len(fields))
     field_str = ", ".join(fields)
@@ -190,6 +199,43 @@ async def delete_message(message_id, user_id):
         return "deleted"
 
     return "soft"
+
+
+async def update_message_extra_data(message_id, extra_data):
+    """更新消息的扩展数据字段"""
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE messages SET extra_data = %s WHERE id = %s",
+                (extra_data, message_id)
+            )
+
+
+async def mark_application_replied(leader_user_id, application_user_id):
+    """标记军团申请消息为已回复（找到 msg_type=5 的消息并更新 extra_data.replied=1）"""
+    import json
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute(
+                "SELECT id, extra_data FROM messages "
+                "WHERE receiver_id = %s AND sender_id = %s AND msg_type = 5 AND receiver_deleted = 0 "
+                "ORDER BY create_time DESC LIMIT 1",
+                (leader_user_id, application_user_id)
+            )
+            row = await cur.fetchone()
+            if row is None:
+                return
+            message_id = row["id"]
+            extra = row["extra_data"] if row["extra_data"] else {}
+            if isinstance(extra, str):
+                extra = json.loads(extra)
+            extra["replied"] = 1
+            await cur.execute(
+                "UPDATE messages SET extra_data = %s WHERE id = %s",
+                (json.dumps(extra, ensure_ascii=False), message_id)
+            )
 
 
 # ==================== 好友表 CRUD ====================

@@ -69,6 +69,33 @@ async def register_client(websocket):
     return client_id
 
 
+async def kick_old_client(user_id):
+    """踢掉同一账号的旧连接（顶号），返回旧 client_id 列表"""
+    if not user_id:
+        return []
+    kicked = []
+    for cid, info in list(clients.items()):
+        if info.get("user_id") == user_id:
+            try:
+                await send_message(info["ws"], {
+                    "type": "kick",
+                    "code": "error",
+                    "message": "您的账号在其他设备登录，已强制下线",
+                    "data": ""
+                })
+            except Exception:
+                pass
+            try:
+                await info["ws"].close()
+            except Exception:
+                pass
+            del clients[cid]
+            kicked.append(cid)
+    if kicked:
+        logger.info(f"顶号踢出: user_id={user_id}, 旧连接={kicked}")
+    return kicked
+
+
 async def unregister_client(client_id):
     if client_id in clients:
         del clients[client_id]

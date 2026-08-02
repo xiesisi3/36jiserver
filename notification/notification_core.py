@@ -16,24 +16,30 @@ from message.protocol import make_response
 logger = logging.getLogger('36ji-server')
 
 
-async def publish_system_message(receiver_id, receiver_name, title, content, category=None):
-    """二类消息：服务端给指定用户发送系统消息（持久化）
+async def publish_system_message(receiver_id, receiver_name, title, content, category=None,
+                                  msg_type=1, sender_id=None, extra=None):
+    """服务端给指定用户发送消息（持久化）
     :param receiver_id: 接收方ID
     :param receiver_name: 接收方名称
     :param title: 消息标题
     :param content: 消息正文
     :param category: 分类标签（战斗/城池/外交/活动/公告/系统）
+    :param msg_type: 消息类型 1=系统消息 2=好友申请 3=好友私聊 4=申请结果 5=军团申请
+    :param sender_id: 发送方ID，None表示系统发送
+    :param extra: 扩展数据（军团申请: {"legion_id": 1, "replied": 0}）
     :return: 消息ID
     """
+    import json
     data = {
-        "sender_id": None,
-        "sender_name": "系统",
+        "sender_id": sender_id,
+        "sender_name": "系统" if sender_id is None else None,
         "receiver_id": receiver_id,
         "receiver_name": receiver_name,
         "title": title,
         "content": content,
         "category": category,
-        "msg_type": 1,
+        "msg_type": msg_type,
+        "extra_data": json.dumps(extra, ensure_ascii=False) if extra else None,
         "is_read": 0,
         "sender_deleted": 0,
         "receiver_deleted": 0,

@@ -4,6 +4,7 @@ import logging
 from data.global_data import (
     fief_cache, fief_troop_cache, fief_income_accumulated,
     towns_cache, user_resource_cache, nation_cache, user_nation_cache,
+    fief_item_effects_cache,
 )
 from data.fief_building_config import (
     BUILDING_CONFIG, BUILDABLE_BUILDINGS, RESOURCE_BUILDINGS,
@@ -134,14 +135,21 @@ def _calculate_fief_income(grid_data, fief_id=None):
     forest_coef = 1.0
     fertile_coef = 1.0
     mine_coef = 1.0
+    pearl_bonus = 0.0
+
     if fief_id:
         fief = fief_cache.get(fief_id)
         if fief:
             town = towns_cache.get(fief.get("town_id"))
             if town:
-                forest_coef = float(town.get("forest", 1.0))
-                fertile_coef = float(town.get("fertile", 1.0))
-                mine_coef = float(town.get("mine", 1.0))
+                # 灵珠加成：只有城池等级≤3才生效，且通过缓存获取该玩家在该城池的bonus
+                if town.get("level", 1) <= 3:
+                    pearl_bonus = fief_item_effects_cache.get(
+                        (fief["user_id"], fief.get("town_id")), 0.0
+                    )
+                forest_coef = float(town.get("forest", 1.0)) + pearl_bonus
+                fertile_coef = float(town.get("fertile", 1.0)) + pearl_bonus
+                mine_coef = float(town.get("mine", 1.0)) + pearl_bonus
 
     for cell in grid_data:
         if cell["has_building"] and not cell["is_building"] and cell["type"] in RESOURCE_BUILDINGS:
@@ -1145,6 +1153,9 @@ async def abandon_fief(fief_id):
     if fief_id in fief_income_accumulated:
         del fief_income_accumulated[fief_id]
 
+    # 删除该玩家在该城池的灵珠效果（封地被放弃后灵珠失效）
+    _delete_pearl_effect(fief["user_id"], fief["town_id"])
+
     return True, "封地已放弃"
 
 
@@ -1178,6 +1189,9 @@ async def destroy_fiefs_by_town(town_id):
             del fief_cache[fief_id]
         if fief_id in fief_income_accumulated:
             del fief_income_accumulated[fief_id]
+
+        # 删除该玩家在该城池的灵珠效果（封地被摧毁后灵珠失效）
+        _delete_pearl_effect(fief["user_id"], fief["town_id"])
 
         destroyed_users.append(user_id)
         logger.info(f"封地摧毁: fief_id={fief_id}, user_id={user_id}, town_id={town_id}")
@@ -1420,3 +1434,18 @@ async def rename_fief(fief_id, new_name):
     fief_cache[fief_id]["name"] = new_name
 
     return True, {"fief_id": fief_id, "name": new_name}
+
+
+# ==================== 灵珠效果辅助函数 ====================
+
+
+def _delete_pearl_effect(user_id, town_id):
+    """删除玩家的灵珠效果（从缓存中移除，异步写入数据库）"""
+    import asyncio
+    from legion.legion_db import delete_fief_item_effect
+
+    cache_key = (user_id, town_id)
+    if cache_key in fief_item_effects_cache:
+        del fief_item_effects_cache[cache_key]
+        # 异步删除数据库记录
+        asyncio.create_task(delete_fief_item_effect(user_id, town_id))
