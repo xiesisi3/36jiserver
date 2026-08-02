@@ -11,7 +11,7 @@ TECH_CONFIG = {
     },
     "列土封疆": {
         "key": "列土封疆",
-        "max_level": 19,
+        "max_level": 23,
         "cost_formula": "arithmetic",
         "cost_base": 1000,
         "base_limit": 1,

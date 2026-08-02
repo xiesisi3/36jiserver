@@ -299,25 +299,18 @@ async def update_troop(user_id, troop_id, team, food, target_type=None):
     if total_troops > max_troops:
         return False, f"兵力超出上限，当前 {total_troops}，上限 {max_troops}"
 
-    if status == 2:
-        old_team = troop.get("team", [])
-        old_total_troops = calculate_total_troops(old_team)
-        if total_troops != old_total_troops:
-            return False, f"行军中的部队总兵力无法改变，当前 {total_troops}，原 {old_total_troops}"
+    old_team = troop.get("team", [])
+    new_aggregated = _aggregate_team_troops(team)
+    old_aggregated = _aggregate_team_troops(old_team)
+    is_same_composition = (new_aggregated == old_aggregated)
+    old_food = troop.get("food", 0)
+    food_changed = (food != old_food)
 
-        new_aggregated = _aggregate_team_troops(team)
-        old_aggregated = _aggregate_team_troops(old_team)
-        if new_aggregated != old_aggregated:
-            return False, "行军中的部队兵种种类和数量无法改变"
-
-        old_food = troop.get("food", 0)
-        if food != old_food:
-            return False, f"行军中的部队粮食无法改变，当前 {food}，原 {old_food}"
-
+    # 情况A：兵种种类和数量不变，且粮食不变，仅调整槽位分布/攻击目标
+    # 适用于驻守中(status=1)和行进中(status=2)
+    if is_same_composition and not food_changed:
         now = get_uptime_ms()
-        updates = {
-            "team": team,
-        }
+        updates = {"team": team}
         if target_type is not None:
             updates["target_type"] = target_type
         await update_troop_db(troop_id, updates)
@@ -335,6 +328,11 @@ async def update_troop(user_id, troop_id, team, food, target_type=None):
             "troop_deltas": {},
         }
 
+    # 情况B：兵种种类或数量有变化，或粮食有变化
+    if status == 2:
+        return False, "行军中的部队兵种种类和粮食无法改变"
+
+    # 驻守中(status=1)，需要封地资源检查
     max_food = calculate_max_carry_food(team)
     if food > max_food:
         return False, f"粮食超出上限，当前 {food}，上限 {max_food}"
@@ -344,7 +342,6 @@ async def update_troop(user_id, troop_id, team, food, target_type=None):
     if fief_id is None:
         return False, "该城池没有封地"
 
-    old_food = troop.get("food", 0)
     food_delta = food - old_food
 
     if food_delta > 0:
@@ -364,8 +361,8 @@ async def update_troop(user_id, troop_id, team, food, target_type=None):
         if user_id in user_resource_cache:
             user_resource_cache[user_id]["grain"] = new_grain
 
-    new_required = _aggregate_team_troops(team)
-    old_required = _aggregate_team_troops(troop["team"])
+    new_required = new_aggregated
+    old_required = old_aggregated
 
     current_troops = fief_troop_cache.get(fief_id, [])
     current_map = {t["troop_name"]: t["count"] for t in current_troops}

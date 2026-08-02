@@ -45,6 +45,8 @@ from mission.mission_db import create_table as create_mission_table
 from mission.mission_core import load_all_missions_to_cache
 from tech.tech_db import create_table as create_tech_table
 from tech.tech_core import load_all_techs_to_cache
+from legion.legion_core import init_legions
+from legion.legion_db import create_tables as create_legion_tables
 
 logging.basicConfig(
     level=logging.INFO,
@@ -119,6 +121,7 @@ async def main():
     await create_mission_table()
 
     await create_tech_table()
+    await create_legion_tables()
 
     await load_all_users_to_cache()
     await load_log_dic_to_cache()
@@ -136,6 +139,7 @@ async def main():
     await load_all_items_to_cache()
     await load_all_missions_to_cache()
     await load_all_techs_to_cache()
+    await init_legions()
     await init_timer()
     await init_fiefs()
     await init_troops()

@@ -94,6 +94,18 @@ from treasure.treasure_interface import (
 from items.item_interface import handle_item_list, handle_item_use
 from mission.mission_interface import handle_mission_list, handle_mission_claim, handle_mission_detail
 from tech.tech_interface import handle_tech_list, handle_tech_detail, handle_tech_unlock
+from legion.legion_interface import (
+    handle_legion_list,
+    handle_legion_create,
+    handle_legion_apply,
+    handle_legion_application_handle,
+    handle_legion_set_vice,
+    handle_legion_transfer,
+    handle_legion_leave,
+    handle_legion_detail,
+    handle_legion_supply,
+    handle_legion_granary_supply,
+)
 
 logger = logging.getLogger('36ji-server')
 
@@ -187,6 +199,16 @@ HANDLERS = {
     "tech_list": handle_tech_list,
     "tech_detail": handle_tech_detail,
     "tech_unlock": handle_tech_unlock,
+    "legion_list": handle_legion_list,
+    "legion_create": handle_legion_create,
+    "legion_apply": handle_legion_apply,
+    "legion_application_handle": handle_legion_application_handle,
+    "legion_set_vice": handle_legion_set_vice,
+    "legion_transfer": handle_legion_transfer,
+    "legion_leave": handle_legion_leave,
+    "legion_detail": handle_legion_detail,
+    "legion_supply": handle_legion_supply,
+    "legion_granary_supply": handle_legion_granary_supply,
 }
 
 

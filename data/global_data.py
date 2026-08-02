@@ -293,6 +293,37 @@ mission_cache = {}
 tech_cache = {}
 
 # ------------------------------------------------------------
+# 军团缓存（服务端启动时从 legions 表全量加载至内存）
+# key: legion_id (int)
+# value: {"id": int, "nation_id": int, "name": str, "description": str,
+#         "total_combat_score": int, "available_combat_score": int,
+#         "granary_max": int, "granary_current": int, "create_time": datetime}
+# 用途：军团查询、列表/详情，全部从内存读取
+# 生命周期：启动时加载，创建时增量更新，服务端关闭时释放
+# ------------------------------------------------------------
+legion_cache = {}
+
+# ------------------------------------------------------------
+# 军团成员缓存（服务端启动时从 legion_members 表全量加载至内存）
+# key: user_id (VARCHAR(32))
+# value: {"legion_id": int, "user_id": str, "role": int,
+#         "personal_granary": int, "personal_total_score": int,
+#         "personal_current_score": int, "join_time": datetime}
+# 用途：快速查询玩家所属军团及个人信息
+# 生命周期：启动时加载，加入/退出/移交时增量更新，服务端关闭时释放
+# ------------------------------------------------------------
+legion_member_cache = {}
+
+# ------------------------------------------------------------
+# 军团成员索引（按军团ID快速查找成员列表）
+# key: legion_id (int)
+# value: set[user_id]
+# 用途：快速获取军团成员列表、成员数量
+# 生命周期：启动时加载，加入/退出时增量更新，服务端关闭时释放
+# ------------------------------------------------------------
+legion_member_index = {}
+
+# ------------------------------------------------------------
 # 城池战斗回合数据缓存（用于客户端播放）
 # key: town_id (int)
 # value: {

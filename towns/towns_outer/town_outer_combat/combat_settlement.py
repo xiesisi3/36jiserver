@@ -17,6 +17,7 @@ from items.item_core import add_item_to_user
 from user_resource.user_resource_db import update_user_resource_field
 from general.general_utils import get_general_info
 from mission.mission_core import add_combat_score
+from legion.legion_core import add_legion_combat_reward
 
 logger = logging.getLogger("36ji-server")
 
@@ -513,5 +514,6 @@ async def settle_combat(town_id, history_id, winner, victory_type, original_town
 
         if reward["score"] > 0:
             await add_combat_score(user_id, int(reward["score"]))
+            await add_legion_combat_reward(user_id, reward["score"])
 
     #logger.info(f"[结算] 战斗 history_id={history_id} 结算完成，共{len(rewards)}名玩家获得奖励")
