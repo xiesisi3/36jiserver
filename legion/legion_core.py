@@ -869,11 +869,155 @@ def get_legion_exchange_items(user_id):
     }
 
 
+# ==================== 军团阶段状态查询 ====================
+
+
+def get_legion_stage_list(user_id):
+    """获取军团四种类型当前阶段状态（对标 mission_list / tech_list）"""
+    member = legion_member_cache.get(user_id)
+    if member is None:
+        return None, "你不在军团中"
+
+    legion = legion_cache.get(member["legion_id"])
+    if legion is None:
+        return None, "军团不存在"
+
+    available_score = legion.get("available_combat_score", 0)
+
+    def _build_stage_info(stages, current, name, field_name):
+        max_stage = max(s["stage"] for s in stages)
+        if current >= max_stage:
+            next_cost = 0
+            is_maxed = True
+        else:
+            next_stage = current + 1
+            next_cost = None
+            for s in stages:
+                if s["stage"] == next_stage:
+                    next_cost = s["cost"]
+                    break
+            is_maxed = False
+        return {
+            "category": field_name,
+            "category_name": name,
+            "current_stage": current,
+            "max_stage": max_stage,
+            "next_cost": next_cost,
+            "is_maxed": is_maxed,
+            "can_afford": available_score >= next_cost if next_cost > 0 else False,
+        }
+
+    granary_current = legion.get("granary_stage", 0)
+    chest_ticket_current = legion.get("chest_ticket_stage", 0)
+    buff_current = legion.get("buff_stage", 0)
+    special_current = legion.get("special_stage", 0)
+
+    result = {
+        "available_combat_score": available_score,
+        "granary": _build_stage_info(GRANARY_STAGES, granary_current, "粮仓上限", "granary"),
+        "chest_ticket": _build_stage_info(CHEST_TICKET_STAGES, chest_ticket_current, "宝箱与货票", "chest_ticket"),
+        "buff": _build_stage_info(BUFF_STAGES, buff_current, "加成类道具", "buff"),
+        "special": _build_stage_info(SPECIAL_STAGES, special_current, "特殊道具", "special"),
+    }
+    return True, result
+
+
+def get_legion_stage_detail(user_id, category):
+    """获取单个类型所有阶段的解锁条件和可解锁道具（对标 mission_detail / tech_detail）"""
+    member = legion_member_cache.get(user_id)
+    if member is None:
+        return None, "你不在军团中"
+
+    legion = legion_cache.get(member["legion_id"])
+    if legion is None:
+        return None, "军团不存在"
+
+    if category == "granary":
+        stages = GRANARY_STAGES
+        current = legion.get("granary_stage", 0)
+        category_name = "粮仓上限"
+        stages_out = []
+        for s in stages:
+            stage_num = s["stage"]
+            stages_out.append({
+                "stage": stage_num,
+                "cost": s["cost"],
+                "unlocked": stage_num <= current,
+                "effect": f"粮仓上限提升至{s['max']}",
+            })
+    elif category == "chest_ticket":
+        stages = CHEST_TICKET_STAGES
+        current = legion.get("chest_ticket_stage", 0)
+        category_name = "宝箱与货票"
+        stages_out = []
+        for s in stages:
+            stage_num = s["stage"]
+            items = []
+            for item_name in s.get("chests", []) + s.get("tickets", []):
+                price = s.get("prices", {}).get(item_name, 0)
+                items.append({"name": item_name, "price": price})
+            stages_out.append({
+                "stage": stage_num,
+                "cost": s["cost"],
+                "unlocked": stage_num <= current,
+                "items": items,
+            })
+    elif category == "buff":
+        stages = BUFF_STAGES
+        current = legion.get("buff_stage", 0)
+        category_name = "加成类道具"
+        stages_out = []
+        for s in stages:
+            stage_num = s["stage"]
+            items = []
+            for item_name in s.get("items", []):
+                price = s.get("prices", {}).get(item_name, 0)
+                items.append({"name": item_name, "price": price})
+            if stage_num == 4:
+                for name in SKILL_BOOK_LIST:
+                    items.append({"name": name, "price": SKILL_BOOK_PRICE})
+            stages_out.append({
+                "stage": stage_num,
+                "cost": s["cost"],
+                "unlocked": stage_num <= current,
+                "items": items,
+            })
+    elif category == "special":
+        stages = SPECIAL_STAGES
+        current = legion.get("special_stage", 0)
+        category_name = "特殊道具"
+        stages_out = []
+        for s in stages:
+            stage_num = s["stage"]
+            items = []
+            for item_name in s.get("items", []):
+                price = s.get("prices", {}).get(item_name, 0)
+                items.append({"name": item_name, "price": price})
+            stages_out.append({
+                "stage": stage_num,
+                "cost": s["cost"],
+                "unlocked": stage_num <= current,
+                "items": items,
+            })
+    else:
+        return None, "无效的类型，可选: granary, chest_ticket, buff, special"
+
+    return True, {
+        "category": category,
+        "category_name": category_name,
+        "current_stage": current,
+        "stages": stages_out,
+    }
+
+
 # ==================== 灵珠使用（土灵珠/水灵珠） ====================
 
 
 async def use_pearl_on_fief(user_id, item_name, town_id):
-    """在封地城池上使用土灵珠/水灵珠，提高该城池资源收益"""
+    """在封地城池上使用土灵珠/水灵珠，提高该城池资源收益
+    注意：灵珠之间是覆盖关系，不是升级关系。
+    使用水灵珠会覆盖已有的土灵珠效果（旧效果销毁），反之则被 cannot_downgrade 拦截。
+    """
     if item_name not in PEARL_CONFIG:
         return False, "该道具不是灵珠"
 

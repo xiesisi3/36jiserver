@@ -109,6 +109,8 @@ from legion.legion_interface import (
     handle_legion_exchange,
     handle_legion_exchange_list,
     handle_pearl_use,
+    handle_legion_stage_list,
+    handle_legion_stage_detail,
 )
 
 logger = logging.getLogger('36ji-server')
@@ -217,6 +219,8 @@ HANDLERS = {
     "legion_exchange": handle_legion_exchange,
     "legion_exchange_list": handle_legion_exchange_list,
     "pearl_use": handle_pearl_use,
+    "legion_stage_list": handle_legion_stage_list,
+    "legion_stage_detail": handle_legion_stage_detail,
 }
 
 

@@ -8,6 +8,7 @@
 # player 类 subcategory 说明：
 #   resource: 可使用，增加玩家资源
 #   material: 强化材料，不可直接使用，由宝物强化模块消耗
+#   pearl:    灵珠，用于封地城池提高资源收益，通过军团接口使用
 # general 类 subcategory 说明：
 #   buff:         临时加成（攻击/防御/血量/士气/经验倍率）
 #   exp:          经验书
@@ -250,6 +251,25 @@ ITEMS = [
         "effects": {
             "gold": 500,
         },
+    },
+
+    # =====================================================================
+    # 玩家类-灵珠（player / pearl）
+    # 用于封地城池，提高该城池资源收益，实际效果由 PEARL_CONFIG 控制
+    # =====================================================================
+    {
+        "name": "土灵珠",
+        "category": "player",
+        "subcategory": "pearl",
+        "icon_path": "resources/img/item/土灵珠.png",
+        "desc": "提高城池资源获得收益50%",
+    },
+    {
+        "name": "水灵珠",
+        "category": "player",
+        "subcategory": "pearl",
+        "icon_path": "resources/img/item/水灵珠.png",
+        "desc": "提高城池资源获得收益150%",
     },
 
     # =====================================================================

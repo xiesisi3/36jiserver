@@ -3,7 +3,7 @@ from legion.legion_core import (
     set_vice_leader, transfer_leader, leave_legion, get_legion_detail,
     get_my_legion_detail, supply_from_granary, supply_from_legion_granary,
     unlock_legion_stage, exchange_legion_item, get_legion_exchange_items,
-    use_pearl_on_fief,
+    use_pearl_on_fief, get_legion_stage_list, get_legion_stage_detail,
 )
 from data.global_data import user_nation_cache, legion_member_cache
 from core.connection import send_message
@@ -250,5 +250,36 @@ async def handle_pearl_use(websocket, client_id, msg):
     ok, result = await use_pearl_on_fief(user_id, item_name, town_id)
     if ok:
         await send_message(websocket, make_response("success", "灵珠使用成功", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_legion_stage_list(websocket, client_id, msg):
+    """查询军团四种类型当前阶段状态"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    if not user_id:
+        await send_message(websocket, make_response("error", "参数解析失败", ""))
+        return
+
+    ok, result = get_legion_stage_list(user_id)
+    if ok:
+        await send_message(websocket, make_response("success", "阶段状态列表", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_legion_stage_detail(websocket, client_id, msg):
+    """查询单个类型所有阶段的解锁条件和可解锁道具"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    category = (data.get("category") or "").strip()
+    if not user_id or not category:
+        await send_message(websocket, make_response("error", "参数解析失败", ""))
+        return
+
+    ok, result = get_legion_stage_detail(user_id, category)
+    if ok:
+        await send_message(websocket, make_response("success", "阶段详情", result))
     else:
         await send_message(websocket, make_response("error", result, ""))
