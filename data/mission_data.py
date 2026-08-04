@@ -37,8 +37,8 @@ MISSION_CONFIG = {
         "name": "个人扩张",
         "description": "封地数量",
         "stages": [
-            {"stage": 1, "threshold": 3,  "rewards": [{"type": "item", "item_name": "私人货票", "quantity": 2}]},
-            {"stage": 2, "threshold": 5,  "rewards": [{"type": "item", "item_name": "普通货票", "quantity": 2}]},
+            {"stage": 1, "threshold": 3,  "rewards": [{"type": "item", "item_name": "私人货票", "quantity": 5}]},
+            {"stage": 2, "threshold": 5,  "rewards": [{"type": "item", "item_name": "普通货票", "quantity": 4}]},
             {"stage": 3, "threshold": 8,  "rewards": [{"type": "item", "item_name": "官府货票", "quantity": 3}]},
             {"stage": 4, "threshold": 11, "rewards": [{"type": "item", "item_name": "吕氏货票", "quantity": 3}]},
             {"stage": 5, "threshold": 14, "rewards": [{"type": "item", "item_name": "范式货票", "quantity": 3}]},
@@ -98,8 +98,8 @@ MISSION_CONFIG = {
         "name": "发展",
         "description": "累计发展分",
         "stages": [
-            {"stage": 1,  "threshold": 500,       "rewards": [{"type": "item", "item_name": "私人货票", "quantity": 2}]},
-            {"stage": 2,  "threshold": 1500,      "rewards": [{"type": "item", "item_name": "普通货票", "quantity": 2}]},
+            {"stage": 1,  "threshold": 500,       "rewards": [{"type": "item", "item_name": "私人货票", "quantity": 4}]},
+            {"stage": 2,  "threshold": 1500,      "rewards": [{"type": "item", "item_name": "普通货票", "quantity": 3}]},
             {"stage": 3,  "threshold": 3000,      "rewards": [{"type": "item", "item_name": "官府货票", "quantity": 3}]},
             {"stage": 4,  "threshold": 5000,      "rewards": [{"type": "item", "item_name": "吕氏货票", "quantity": 3}]},
             {"stage": 5,  "threshold": 10000,     "rewards": [{"type": "item", "item_name": "范式货票", "quantity": 3}]},

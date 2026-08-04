@@ -50,6 +50,7 @@ async def _sync_loop():
             await _update_marching_troops()
             await _update_combat()
             await _revive_dead_generals()
+            await _clean_expired_buffs()
     except asyncio.CancelledError:
         pass
 
@@ -258,6 +259,44 @@ async def _revive_dead_generals():
                 logger.info(f"武将 {general_id}（{general.get('general_name', '')}）复活，状态恢复为未编组")
     except Exception as e:
         logger.error(f"武将复活检测异常: {e}")
+
+
+_last_cleanup_time = 0
+
+
+async def _clean_expired_buffs():
+    """每1分钟检查一次，清理已过期的武将加成buff"""
+    global _last_cleanup_time
+    current_uptime = get_uptime_ms()
+    if current_uptime - _last_cleanup_time < 60_000:
+        return
+    _last_cleanup_time = current_uptime
+
+    try:
+        from general.general_db import get_expired_buffs, update_general
+        from general.general_core import sync_cache_update
+
+        expired_generals = await get_expired_buffs(current_uptime)
+
+        if not expired_generals:
+            return
+
+        bonus_types = ["attack", "defense", "hp", "exp", "morale"]
+        for general in expired_generals:
+            general_id = general["id"]
+            updates = {}
+            for bonus_type in bonus_types:
+                expire_field = f"{bonus_type}_bonus_expire"
+                bonus_field = f"{bonus_type}_bonus"
+                expire_val = general.get(expire_field)
+                if expire_val is not None and expire_val < current_uptime:
+                    updates[bonus_field] = 0.0
+                    updates[expire_field] = None
+            if updates:
+                await update_general(general_id, updates)
+                sync_cache_update(general_id, updates)
+    except Exception as e:
+        logger.error(f"buff过期清理异常: {e}")
 
 
 def _update_from_monotonic():

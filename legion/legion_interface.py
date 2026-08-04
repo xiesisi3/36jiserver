@@ -4,6 +4,7 @@ from legion.legion_core import (
     get_my_legion_detail, supply_from_granary, supply_from_legion_granary,
     unlock_legion_stage, exchange_legion_item, get_legion_exchange_items,
     use_pearl_on_fief, get_legion_stage_list, get_legion_stage_detail,
+    transfer_grain_with_merit,
 )
 from legion.legion_assembly import (
     create_assembly, cancel_assembly, update_assembly,
@@ -170,6 +171,26 @@ async def handle_legion_supply(websocket, client_id, msg):
     ok, result = await supply_from_granary(user_id, troop_id, food_amount)
     if ok:
         await send_message(websocket, make_response("success", "补给成功", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_legion_merit_transfer(websocket, client_id, msg):
+    """功勋转运军粮至个人粮仓
+    入参: data.user_id - 玩家ID, data.merit - 消耗功勋数量
+    返回: {merit_used, grain_transferred, merit_remaining, grain_remaining, personal_granary}
+    """
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    merit_amount = data.get("merit")
+    if not user_id or merit_amount is None:
+        await send_message(websocket, make_response("error", "参数解析失败", ""))
+        return
+    merit_amount = int(merit_amount)
+
+    ok, result = await transfer_grain_with_merit(user_id, merit_amount)
+    if ok:
+        await send_message(websocket, make_response("success", "转运成功", result))
     else:
         await send_message(websocket, make_response("error", result, ""))
 

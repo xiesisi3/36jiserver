@@ -157,6 +157,11 @@ async def handle_robber_fight(websocket, client_id, msg):
     if use_gold:
         total_exp = int(total_exp * ROBBER_GOLD_EXP_BONUS)
 
+    # 武将经验加成（buff）：无加成为0.0不影响原经验值
+    exp_bonus = general.get("exp_bonus", 0.0)
+    if exp_bonus > 0:
+        total_exp = int(total_exp * (1 + exp_bonus))
+
     exp_result = add_exp(general, total_exp)
 
     await update_general(general_id, exp_result["updates"])

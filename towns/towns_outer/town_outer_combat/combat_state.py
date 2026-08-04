@@ -30,7 +30,7 @@ from combat.combat_utils import recalc_troop_food
 from general.general_utils import get_general_info
 from general.general_db import update_general
 from general.general_core import add_exp, sync_cache_update
-from data.troop_data import TROOP_DATA
+from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
 
 logger = logging.getLogger("36ji-server")
 
@@ -92,7 +92,7 @@ async def _start_round(town_id, round_num, battle_troops):
             "u": troop.get("user_id", ""),
         }
 
-    troop_order, id_to_dynamic, general_kills, eliminated_troops, round_data = process_round_logic(town_id, battle_troops, round_num)
+    troop_order, id_to_dynamic, general_kills, eliminated_troops, round_data, morale_updates = process_round_logic(town_id, battle_troops, round_num)
 
     # 每回合结束后持久化：粮食裁剪、死亡部队删除、存活部队写入DB
     frv = fight_round_vars.get(town_id, {})
@@ -120,11 +120,32 @@ async def _start_round(town_id, round_num, battle_troops):
             if user_id != "0" and general_id:
                 general = get_general_info(general_id)
                 if general:
+                    # 武将阵亡：重置士气为100，清空所有加成道具效果及过期时间
                     general["status"] = 4
                     general["death_time"] = now_ms
                     general["pos"] = None
                     general["dest"] = None
-                    await update_general(general_id, {"status": 4, "death_time": now_ms, "pos": None, "dest": None})
+                    general["morale"] = 100
+                    general["attack_bonus"] = 0.0
+                    general["defense_bonus"] = 0.0
+                    general["hp_bonus"] = 0.0
+                    general["exp_bonus"] = 0.0
+                    general["morale_bonus"] = 0.0
+                    general["attack_bonus_expire"] = None
+                    general["defense_bonus_expire"] = None
+                    general["hp_bonus_expire"] = None
+                    general["exp_bonus_expire"] = None
+                    general["morale_bonus_expire"] = None
+                    await update_general(general_id, {
+                        "status": 4, "death_time": now_ms,
+                        "pos": None, "dest": None,
+                        "morale": 100,
+                        "attack_bonus": 0.0, "defense_bonus": 0.0,
+                        "hp_bonus": 0.0, "exp_bonus": 0.0, "morale_bonus": 0.0,
+                        "attack_bonus_expire": None, "defense_bonus_expire": None,
+                        "hp_bonus_expire": None, "exp_bonus_expire": None,
+                        "morale_bonus_expire": None,
+                    })
         else:
             # 部队存活：更新DB和缓存
             if tid in troop_cache:
@@ -198,6 +219,15 @@ async def _start_round(town_id, round_num, battle_troops):
                     gain_exp_map[name] = exp
                 if death:
                     death_exp_map[name] = death
+        for item in TROOP_DATA_SPECIAL:
+            name = item.get("兵种名称")
+            exp = item.get("gain_exp", 0)
+            death = item.get("death_exp", 0)
+            if name:
+                if exp:
+                    gain_exp_map[name] = exp
+                if death:
+                    death_exp_map[name] = death
 
         for (general_id, user_id), data in general_kills.items():
             total_exp = 0
@@ -211,6 +241,11 @@ async def _start_round(town_id, round_num, battle_troops):
             if total_exp > 0:
                 general = get_general_info(general_id)
                 if general:
+                    # 武将经验加成（buff）：无加成为0.0不影响原经验值
+                    exp_bonus = general.get("exp_bonus", 0.0)
+                    if exp_bonus > 0:
+                        total_exp = int(total_exp * (1 + exp_bonus))
+
                     old_level = general.get("level", 0)
                     old_exp = general.get("exp", 0)
 
@@ -221,6 +256,27 @@ async def _start_round(town_id, round_num, battle_troops):
                     logger.warning(f"[战斗] 武将 {general_id} (user_id={user_id}) 不在缓存中，无法结算经验")
             else:
                 pass
+
+        # 外城战斗回合结束：批量写入武将士气变化（每消灭一支部队+25，上限1000）
+        if morale_updates:
+            from general.general_db import batch_update_generals
+            morale_batch = []
+            for general_id, total_morale_gain in morale_updates.items():
+                general = get_general_info(general_id)
+                if not general:
+                    continue
+                current_morale = general.get("morale", 100)
+                new_morale = min(current_morale + total_morale_gain, 1000)
+                if new_morale != current_morale:
+                    general["morale"] = new_morale
+                    morale_batch.append({
+                        "general_id": general_id,
+                        "updates": {"morale": new_morale},
+                    })
+            if morale_batch:
+                await batch_update_generals(morale_batch)
+                for item in morale_batch:
+                    sync_cache_update(item["general_id"], item["updates"])
 
     await broadcast(make_response("fight_start", "城池战斗回合消息", {
         "type": "town_combat_notify",

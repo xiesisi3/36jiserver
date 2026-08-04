@@ -1,7 +1,6 @@
 import math
 import logging
 import asyncio
-import time
 
 from data.global_data import (
     clients, towns_cache, troop_cache, user_nation_cache,
@@ -120,11 +119,11 @@ def create_assembly(user_id, town_id, title, remark, end_time, main_min, main_ma
         if p["commander_user_id"] == user_id:
             return False, "你已有一个进行中的集结计划，请先取消后再创建"
 
-    now = time.time()
+    now = get_uptime_ms()
     if end_time <= now:
         return False, "集结结束时间必须大于当前时间"
 
-    if end_time - now > MAX_PLAN_DURATION:
+    if end_time - now > MAX_PLAN_DURATION * 1000:
         return False, f"集结时间最多 {MAX_PLAN_DURATION // 3600} 小时"
 
     for p in assembly_plans.values():
@@ -314,7 +313,7 @@ def join_assembly(user_id, plan_id, troops):
     if plan["legion_id"] != member["legion_id"]:
         return False, "无权参与该集结计划"
 
-    now = time.time()
+    now = get_uptime_ms()
     if now >= plan["end_time"]:
         return False, "集结计划已结束"
 
@@ -628,7 +627,7 @@ async def cancel_plans_at_town(town_id, reason):
 
 
 async def cancel_expired_plans():
-    now = time.time()
+    now = get_uptime_ms()
     expired = [p for p in assembly_plans.values() if p["end_time"] <= now]
     for plan in expired:
         await _cancel_plan_internal(plan, "集结时间已到")

@@ -18,6 +18,7 @@ from general.general_core import (
 )
 from user_resource.user_resource_db import update_user_resource_field
 from data.global_data import user_resource_cache, recruit_cache, recruit_copper_daily, recruit_pity_counter, generals_cache
+from data.hero_data import HEROES
 from tech.tech_core import get_general_limit, ensure_tech
 
 logger = logging.getLogger('36ji-server')
@@ -65,8 +66,8 @@ async def handle_recruit_pre(websocket, client_id, msg):
         return
 
     if payment_type == "copper":
-        remaining = _get_or_refresh_copper_daily(user_id)
-        if remaining <= 0:
+        _copper_remaining = _get_or_refresh_copper_daily(user_id)
+        if _copper_remaining <= 0:
             await send_message(websocket, make_response("error", "今日铜钱招募次数已用完", ""))
             return
 
@@ -98,24 +99,46 @@ async def handle_recruit_pre(websocket, client_id, msg):
         await update_user_resource_field(user_id, "gold", gold - GOLD_COST)
         user_resource_cache[user_id]["gold"] = gold - GOLD_COST
 
-    pity = recruit_pity_counter.get(user_id, 0)
-    if pity >= 9:
-        panel = draw_fixed_hero(user_id)
-        if panel is None:
-            panel = generate_random_general(user_id)
-            recruit_type = "random"
-        else:
-            recruit_type = "fixed"
-    elif random.random() < 0.2:
-        panel = draw_fixed_hero(user_id)
-        if panel is None:
-            panel = generate_random_general(user_id)
-            recruit_type = "random"
-        else:
-            recruit_type = "fixed"
+    # ========== 测试阶段强制处理 START ==========
+    # 每天首次铜钱招募必出赵云，第二次必出项羽（如玩家未拥有该武将）
+    force_panel = None
+    if payment_type == "copper" and _copper_remaining in (20, 19):
+        target_name = "赵云" if _copper_remaining == 20 else "项羽"
+        owned = False
+        if user_id in generals_cache:
+            for g in generals_cache[user_id]:
+                if g.get("hero_name") == target_name:
+                    owned = True
+                    break
+        if not owned:
+            for hero in HEROES:
+                if hero["hero_name"] == target_name:
+                    force_panel = hero.copy()
+                    break
+    # ========== 测试阶段强制处理 END ==========
+
+    if force_panel is not None:
+        panel = force_panel
+        recruit_type = "fixed"
     else:
-        panel = generate_random_general(user_id)
-        recruit_type = "random"
+        pity = recruit_pity_counter.get(user_id, 0)
+        if pity >= 9:
+            panel = draw_fixed_hero(user_id)
+            if panel is None:
+                panel = generate_random_general(user_id)
+                recruit_type = "random"
+            else:
+                recruit_type = "fixed"
+        elif random.random() < 0.2:
+            panel = draw_fixed_hero(user_id)
+            if panel is None:
+                panel = generate_random_general(user_id)
+                recruit_type = "random"
+            else:
+                recruit_type = "fixed"
+        else:
+            panel = generate_random_general(user_id)
+            recruit_type = "random"
 
     if recruit_type == "fixed":
         recruit_pity_counter[user_id] = 0

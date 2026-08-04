@@ -6,7 +6,7 @@ import copy
 import random
 import logging
 
-from data.troop_data import TROOP_DATA
+from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
 from combat.combat_constants import (
     TECH_BONUS, DEFENSE_HERO_BONUS, HP_HERO_BONUS,
 )
@@ -23,6 +23,7 @@ from combat.combat_skill import (
     get_defender_skill_effect,
 )
 from general.general_core import TALENT_BONUSES
+from server_timer.server_timer_core import get_uptime_ms
 
 logger = logging.getLogger('36ji-server')
 
@@ -91,6 +92,16 @@ def _prepare_attack_stats(attacker, att_slot, defender, def_slot):
     talent_tqtb_level = defender_general.get("talent_tqtb", 0)
     defense += TALENT_BONUSES.get("铜墙铁壁", {}).get(talent_tqtb_level, 0)
 
+    # 武将加成类道具（buff）：攻击/防御/血量倍率，无加成时默认0.0不影响原公式
+    attack_bonus = attacker_general.get("attack_bonus", 0.0)
+    attack_power *= (1 + attack_bonus)
+
+    defense_bonus = defender_general.get("defense_bonus", 0.0)
+    defense *= (1 + defense_bonus)
+
+    hp_bonus = defender_general.get("hp_bonus", 0.0)
+    hp *= (1 + hp_bonus)
+
     return (attack_power, defense, attacker_count, hero_bonus, counter_bonus,
             TECH_BONUS, hp, phase_bonus, DEFENSE_HERO_BONUS, HP_HERO_BONUS)
 
@@ -146,6 +157,11 @@ def _compute_damage_and_apply(attacker, att_slot, defender, def_slot, effect):
             if troop["兵种名称"] == defender_troop_name:
                 exp_gained = int(troop.get("gain_exp", 0) * killed)
                 break
+        if exp_gained == 0:
+            for troop in TROOP_DATA_SPECIAL:
+                if troop["兵种名称"] == defender_troop_name:
+                    exp_gained = int(troop.get("gain_exp", 0) * killed)
+                    break
 
     consumed_units = attacker_count
     if killed == defender_count and denominator > 0:
@@ -310,8 +326,15 @@ def _process_single_attack(attacker, defender, att_slot, context, total_killed_o
         if att_effect.get("force_double_attack"):
             double_attack = True
         else:
-            morale = att_general.get("morale", 0)
-            rate = get_double_attack_rate(morale)
+            # 连击率计算：优先使用未过期的士气加成（buff），过期或无加成时使用基础士气
+            current_uptime = get_uptime_ms()
+            morale_bonus = att_general.get("morale_bonus", 0.0)
+            morale_bonus_expire = att_general.get("morale_bonus_expire") or 0
+            if current_uptime < morale_bonus_expire and morale_bonus > 0:
+                effective_morale = morale_bonus
+            else:
+                effective_morale = att_general.get("morale", 0)
+            rate = get_double_attack_rate(effective_morale)
             combo_rate = att_general.get("combo_rate", 0)
             # 霸王技能额外增加12%连击率
             if att_general.get("skill_name") == "霸王":

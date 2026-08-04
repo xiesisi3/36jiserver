@@ -320,7 +320,7 @@ ITEMS = [
         "category": "general",
         "subcategory": "buff",
         "icon_path": "resources/img/item/斗志昂扬.png",
-        "effects": {"morale": 1000},
+        "effects": {"morale_bonus": 1000},
         "condition": ["alive", "not_fighting"],
     },
     {
@@ -425,7 +425,7 @@ ITEMS = [
         "subcategory": "reset",
         "icon_path": "resources/img/item/洗髓丹.png",
         "reset_type": "attributes",
-        "condition": ["alive", "not_fighting", "not_hero"],
+        "condition": ["alive", "not_fighting", "not_hero", "not_in_formation"],
     },
     {
         "name": "天赋重置丹",
@@ -433,7 +433,7 @@ ITEMS = [
         "subcategory": "reset",
         "icon_path": "resources/img/item/天赋重置丹.png",
         "reset_type": "talents",
-        "condition": ["alive", "not_fighting", "not_hero"],
+        "condition": ["alive", "not_fighting", "not_in_formation"],
     },
     {
         "name": "经验书",

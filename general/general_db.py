@@ -43,6 +43,11 @@ async def create_table():
                     defense_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '防御加成',
                     hp_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '血量加成',
                     morale_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '士气加成',
+                    attack_bonus_expire BIGINT DEFAULT NULL COMMENT '攻击加成过期时间(毫秒)',
+                    defense_bonus_expire BIGINT DEFAULT NULL COMMENT '防御加成过期时间(毫秒)',
+                    hp_bonus_expire BIGINT DEFAULT NULL COMMENT '血量加成过期时间(毫秒)',
+                    exp_bonus_expire BIGINT DEFAULT NULL COMMENT '经验加成过期时间(毫秒)',
+                    morale_bonus_expire BIGINT DEFAULT NULL COMMENT '士气加成过期时间(毫秒)',
                     combo_rate FLOAT NOT NULL DEFAULT 0.0 COMMENT '连击率（装备宝物+星等累积）',
                     skill_name VARCHAR(100) DEFAULT NULL COMMENT '技能名称',
                     skill_desc VARCHAR(500) DEFAULT NULL COMMENT '技能说明',
@@ -58,6 +63,25 @@ async def create_table():
                 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='武将信息表'
             """)
             await cur.execute("SET SESSION sql_notes = 1")
+
+            # 增量升级：为已有表补加 buff 加成及过期时间字段（如字段已存在则忽略）
+            alter_columns = [
+                "ADD COLUMN exp_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '经验加成'",
+                "ADD COLUMN attack_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '攻击加成'",
+                "ADD COLUMN defense_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '防御加成'",
+                "ADD COLUMN hp_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '血量加成'",
+                "ADD COLUMN morale_bonus FLOAT NOT NULL DEFAULT 0.0 COMMENT '士气加成'",
+                "ADD COLUMN attack_bonus_expire BIGINT DEFAULT NULL COMMENT '攻击加成过期时间(毫秒)'",
+                "ADD COLUMN defense_bonus_expire BIGINT DEFAULT NULL COMMENT '防御加成过期时间(毫秒)'",
+                "ADD COLUMN hp_bonus_expire BIGINT DEFAULT NULL COMMENT '血量加成过期时间(毫秒)'",
+                "ADD COLUMN exp_bonus_expire BIGINT DEFAULT NULL COMMENT '经验加成过期时间(毫秒)'",
+                "ADD COLUMN morale_bonus_expire BIGINT DEFAULT NULL COMMENT '士气加成过期时间(毫秒)'",
+            ]
+            for alter_sql in alter_columns:
+                try:
+                    await cur.execute(f"ALTER TABLE generals {alter_sql}")
+                except Exception:
+                    pass
 
 
 async def insert_general(data):
@@ -134,4 +158,66 @@ async def get_all_generals():
     async with pool.acquire() as conn:
         async with conn.cursor(aiomysql.DictCursor) as cur:
             await cur.execute("SELECT * FROM generals")
+            return await cur.fetchall()
+
+
+async def batch_update_generals(updates_list, conn=None):
+    """批量更新武将属性，在同一事务内执行多条UPDATE
+    :param updates_list: [{"general_id": int, "updates": {field: value}}, ...]
+    :param conn: 可选的事务连接
+    :return: 受影响总行数
+    """
+    if not updates_list:
+        return 0
+
+    total_rows = 0
+    if conn is not None:
+        async with conn.cursor() as cur:
+            for item in updates_list:
+                general_id = item["general_id"]
+                updates = item["updates"]
+                if not updates:
+                    continue
+                set_str = ", ".join([f"`{k}`=%s" for k in updates.keys()])
+                sql = f"UPDATE generals SET {set_str} WHERE id = %s"
+                values = list(updates.values()) + [general_id]
+                total_rows += await cur.execute(sql, values)
+        return total_rows
+
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            for item in updates_list:
+                general_id = item["general_id"]
+                updates = item["updates"]
+                if not updates:
+                    continue
+                set_str = ", ".join([f"`{k}`=%s" for k in updates.keys()])
+                sql = f"UPDATE generals SET {set_str} WHERE id = %s"
+                values = list(updates.values()) + [general_id]
+                total_rows += await cur.execute(sql, values)
+    return total_rows
+
+
+async def get_expired_buffs(current_uptime):
+    """查询所有有过期buff的武将
+    :param current_uptime: 当前服务器运行毫秒数
+    :return: 有过期buff的武将列表
+    """
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor(aiomysql.DictCursor) as cur:
+            await cur.execute("""
+                SELECT id, attack_bonus, attack_bonus_expire,
+                       defense_bonus, defense_bonus_expire,
+                       hp_bonus, hp_bonus_expire,
+                       exp_bonus, exp_bonus_expire,
+                       morale_bonus, morale_bonus_expire
+                FROM generals
+                WHERE (attack_bonus_expire IS NOT NULL AND attack_bonus_expire < %s)
+                   OR (defense_bonus_expire IS NOT NULL AND defense_bonus_expire < %s)
+                   OR (hp_bonus_expire IS NOT NULL AND hp_bonus_expire < %s)
+                   OR (exp_bonus_expire IS NOT NULL AND exp_bonus_expire < %s)
+                   OR (morale_bonus_expire IS NOT NULL AND morale_bonus_expire < %s)
+            """, (current_uptime,) * 5)
             return await cur.fetchall()

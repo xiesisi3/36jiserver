@@ -35,11 +35,14 @@ def _make_troop_state(troop, include_general=False):
     include_general=True时包含武将信息（武力、智力、魅力等）。
     """
     user_id = str(troop.get("user_id", "")) if troop.get("user_id") is not None else ""
+    # 民兵通过 _nation 字段标记所属国家，优先使用
+    _nation = troop.get("_nation")
+    nation_id = _nation if _nation is not None else user_nation_cache.get(user_id, 0)
     st = {
         "p": list(troop.get("grid_pos", [])),
         "t": [],
         "uid": user_id,
-        "n": user_nation_cache.get(user_id, 0),
+        "n": nation_id,
         "f": troop.get("food", 0),
     }
     team = troop.get("team", [])
@@ -175,6 +178,7 @@ def _compute_general_kills_from_attack_list(
     eliminated_troops=None,
     target_team_names=None,
     attacker_team_names=None,
+    morale_updates=None,
 ):
     attacker_general_id = _get_troop_general_id(attacker_troop)
     target_general_id = _get_troop_general_id(target_troop)
@@ -225,6 +229,10 @@ def _compute_general_kills_from_attack_list(
         if key not in eliminated_troops:
             eliminated_troops[key] = set()
         eliminated_troops[key].add(eliminated_tid)
+        # 外城战斗：每消灭一支部队，武将士气+25（回合结束统一写入DB）
+        if morale_updates is not None and general_id:
+            current = morale_updates.get(general_id, 0)
+            morale_updates[general_id] = current + 25
 
     for entry in (atk_list or []):
         t = entry.get("t")
@@ -312,7 +320,9 @@ def _compute_round_stats(id_to_dynamic, sim_troops, state_snapshots, user_nation
     for tid, troop in id_to_dynamic.items():
         uid = str(troop.get("user_id", ""))
         troop_user[tid] = uid
-        troop_owner[tid] = user_nation_cache.get(uid, 0)
+        # 民兵通过 _nation 字段标记所属国家，优先使用
+        _nation = troop.get("_nation")
+        troop_owner[tid] = _nation if _nation is not None else user_nation_cache.get(uid, 0)
 
     def count_soldiers(team):
         return sum(slot.get("数量", 0) for slot in (team or []) if slot and slot.get("兵种名称"))
@@ -461,8 +471,9 @@ def process_round_logic(town_id, battle_troops, round_num):
         traffic_move_bonus = 1 if traffic_tier >= 9 else 0
 
         for tid, st in sim_troops.items():
-            user_id = str(st.get("user_id", "")) if st.get("user_id") is not None else ""
-            st_nation = user_nation_cache.get(user_id, 0)
+            # 使用 get_troop_owner 统一获取部队所属国家（支持民兵的 _nation 字段）
+            # 民兵 user_id="0" 但 _nation 为城池所属国家，使其能正确享受防御加成
+            st_nation = get_troop_owner(st, user_nation_cache)
             if st_nation == town_owner:
                 st["_town_defense_attack_bonus"] = attack_bonus
                 st["_town_defense_defense_bonus"] = defense_bonus
@@ -471,6 +482,8 @@ def process_round_logic(town_id, battle_troops, round_num):
 
     general_kills = {}
     eliminated_troops = {}
+    # 外城战斗士气临时累计：{general_id: +25*n}，回合结束后统一写入DB，避免同回合额外行动读取到变化后的士气
+    morale_updates = {}
 
     for idx, troop in enumerate(troop_order):
         tid = troop["troop_id"]
@@ -597,6 +610,7 @@ def process_round_logic(town_id, battle_troops, round_num):
                 eliminated_troops=eliminated_troops,
                 target_team_names=target_team_names,
                 attacker_team_names=attacker_team_names,
+                morale_updates=morale_updates,
             )
 
         attack_sequences[tid] = as_entry["atk"]
@@ -700,6 +714,7 @@ def process_round_logic(town_id, battle_troops, round_num):
                     eliminated_troops=eliminated_troops,
                     target_team_names=target_team_names,
                     attacker_team_names=attacker_team_names,
+                    morale_updates=morale_updates,
                 )
 
             attack_sequences[tid] = as_entry["atk"]
@@ -748,7 +763,7 @@ def process_round_logic(town_id, battle_troops, round_num):
         "_arriving": previous_frv.get("_arriving", []),
     }
 
-    return troop_order, id_to_dynamic, general_kills, eliminated_troops, round_data
+    return troop_order, id_to_dynamic, general_kills, eliminated_troops, round_data, morale_updates
 
 
 def get_round_dynamic_troops(town_id):

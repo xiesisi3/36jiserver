@@ -43,6 +43,13 @@ def _rebuild_battle_troops_from_round_data(town_id, round_data):
         troop_copy["grid_pos"] = rd.get("grid_pos")
         troop_copy["team"] = copy.deepcopy(rd.get("team", []))
         troop_copy["food"] = rd.get("food", 0)
+        # 恢复时为民兵注入 _nation 字段（义勇军 general_id=-10002，连弩 general_id=-10005，user_id="0"）
+        # 民兵在战斗准备阶段生成时已写入 _nation，但服务器重启后从DB恢复时该字段丢失
+        # 通过 general_id 识别民兵，补充所属国家信息以正确判断敌我
+        if troop_copy.get("general_id") in (-10002, -10005):
+            town = towns_cache.get(town_id)
+            if town:
+                troop_copy["_nation"] = town.get("owner", 0)
         battle_troops.append(troop_copy)
     return battle_troops
 
@@ -69,11 +76,21 @@ async def _recover_status_1(town_id, history_id, now_ms):
             troop_copy = copy.deepcopy(troop)
             troop_copy["troop_id"] = tid
             troop_copy["grid_pos"] = [troop.get("grid_x"), troop.get("grid_y")] if troop.get("grid_x") is not None else None
+            # 恢复时为民兵注入 _nation 字段（义勇军 general_id=-10002，连弩 general_id=-10005，user_id="0"）
+            if troop_copy.get("general_id") in (-10002, -10005):
+                town = towns_cache.get(town_id)
+                if town:
+                    troop_copy["_nation"] = town.get("owner", 0)
             defenders.append(troop_copy)
         elif tdest == town_id and arrive_time <= now_ms:
             troop_copy = copy.deepcopy(troop)
             troop_copy["troop_id"] = tid
             troop_copy["grid_pos"] = [troop.get("grid_x"), troop.get("grid_y")] if troop.get("grid_x") is not None else None
+            # 恢复时为民兵注入 _nation 字段
+            if troop_copy.get("general_id") in (-10002, -10005):
+                town = towns_cache.get(town_id)
+                if town:
+                    troop_copy["_nation"] = town.get("owner", 0)
             defenders.append(troop_copy)
 
     if not defenders:

@@ -1,4 +1,4 @@
-from data.troop_data import TROOP_DATA
+from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
 from general.general_core import TALENT_BONUSES
 
 
@@ -23,6 +23,8 @@ def calculate_max_carry_food(team):
         if not name or count <= 0:
             continue
         troop_info = next((t for t in TROOP_DATA if t["兵种名称"] == name), None)
+        if troop_info is None:
+            troop_info = next((t for t in TROOP_DATA_SPECIAL if t["兵种名称"] == name), None)
         if troop_info:
             max_food += troop_info["可携带粮食"] * count
     return max_food

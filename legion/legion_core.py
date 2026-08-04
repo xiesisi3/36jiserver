@@ -39,6 +39,8 @@ ROLE_MEMBER = 3
 
 LEGION_CREATE_COST = 1000
 
+PERSONAL_GRANARY_MAX = 2000000
+
 
 async def init_legions():
     await create_tables()
@@ -526,6 +528,95 @@ async def supply_from_granary(user_id, troop_id, food_amount):
         "food_added": food_amount,
         "food_total": db_new_food,
         "personal_granary_remaining": new_granary,
+    }
+
+
+# ==================== 功勋转运军粮至个人粮仓 ====================
+
+
+async def transfer_grain_with_merit(user_id, merit_amount):
+    """消耗功勋，将玩家资源粮食转运至军团个人粮仓（事务保证原子性）
+    
+    1 功勋 = 转运 100 粮食，个人粮仓上限 200W。
+    粮食从 user_resource.grain 扣除，功勋从 user_resource.merit 扣除。
+    """
+    if not isinstance(merit_amount, int) or merit_amount <= 0:
+        return False, "功勋数量必须为正整数"
+
+    member = legion_member_cache.get(user_id)
+    if member is None:
+        return False, "你不在军团中，无法转运军粮"
+
+    grain_to_transfer = merit_amount * 100
+
+    pool = get_pool()
+    async with pool.acquire() as txn_conn:
+        await txn_conn.begin()
+        async with txn_conn.cursor(aiomysql.DictCursor) as cur:
+            # 锁定玩家资源行（FOR UPDATE 保证并发安全）
+            await cur.execute(
+                "SELECT merit, grain FROM user_resource WHERE user_id = %s FOR UPDATE",
+                (user_id,)
+            )
+            db_resource = await cur.fetchone()
+            if db_resource is None:
+                await txn_conn.rollback()
+                return False, "玩家资源不存在"
+
+            if db_resource["merit"] < merit_amount:
+                await txn_conn.rollback()
+                return False, f"功勋不足，需要{merit_amount}，当前{db_resource['merit']}"
+
+            if db_resource["grain"] < grain_to_transfer:
+                await txn_conn.rollback()
+                return False, f"粮食不足，需要{grain_to_transfer}，当前{db_resource['grain']}"
+
+            # 锁定个人粮仓行（FOR UPDATE 保证并发安全）
+            await cur.execute(
+                "SELECT personal_granary FROM legion_members WHERE user_id = %s FOR UPDATE",
+                (user_id,)
+            )
+            db_member = await cur.fetchone()
+            if db_member is None:
+                await txn_conn.rollback()
+                return False, "不在军团中"
+
+            new_personal_granary = db_member["personal_granary"] + grain_to_transfer
+            if new_personal_granary > PERSONAL_GRANARY_MAX:
+                await txn_conn.rollback()
+                return False, f"已达个人粮仓上限，当前{db_member['personal_granary']}，上限{PERSONAL_GRANARY_MAX}，可转入{PERSONAL_GRANARY_MAX - db_member['personal_granary']}"
+
+            new_merit = db_resource["merit"] - merit_amount
+            new_grain = db_resource["grain"] - grain_to_transfer
+
+            # 更新玩家资源
+            await cur.execute(
+                "UPDATE user_resource SET merit = %s, grain = %s WHERE user_id = %s",
+                (new_merit, new_grain, user_id)
+            )
+            # 更新个人粮仓
+            await cur.execute(
+                "UPDATE legion_members SET personal_granary = %s WHERE user_id = %s",
+                (new_personal_granary, user_id)
+            )
+
+        await txn_conn.commit()
+
+    # 事务成功后更新内存缓存
+    if user_id in user_resource_cache:
+        user_resource_cache[user_id]["merit"] = new_merit
+        user_resource_cache[user_id]["grain"] = new_grain
+    member["personal_granary"] = new_personal_granary
+
+    logger.info(f"功勋转运军粮: user={user_id}, merit={merit_amount}, grain={grain_to_transfer}, "
+                f"merit_remaining={new_merit}, grain_remaining={new_grain}, personal_granary={new_personal_granary}")
+
+    return True, {
+        "merit_used": merit_amount,
+        "grain_transferred": grain_to_transfer,
+        "merit_remaining": new_merit,
+        "grain_remaining": new_grain,
+        "personal_granary": new_personal_granary,
     }
 
 

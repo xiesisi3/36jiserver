@@ -15,7 +15,13 @@ from items.item_db import (
 )
 from user_resource.user_resource_db import update_user_resource_field
 from general.general_db import update_general
-from general.general_core import add_exp, sync_cache_update as sync_general_cache_update
+from general.general_core import (
+    add_exp,
+    sync_cache_update as sync_general_cache_update,
+    PERSONALITY_BONUS,
+    TALENT_DB_FIELDS,
+)
+from server_timer.server_timer_core import get_uptime_ms
 
 logger = logging.getLogger('36ji-server')
 
@@ -137,6 +143,8 @@ def _check_general_condition(general, condition):
             return False, "武将正在战斗中，无法使用"
         if cond == "not_hero" and general.get("hero_name") in _FIXED_HERO_NAMES:
             return False, "英雄武将无法使用该道具"
+        if cond == "not_in_formation" and status != 0:
+            return False, "武将已编组，无法使用该道具"
     return True, ""
 
 
@@ -365,7 +373,215 @@ async def _use_exp_book(user_id, item_id, item, template, general_id, quantity=1
     }
 
 
-async def use_item(user_id, item_id, general_id=None, quantity=1):
+async def _use_reset_attributes(user_id, item_id, item, general_id, quantity, msg):
+    """使用洗髓丹：重置武将性格与属性点
+    
+    保留等级、经验，根据新性格重新计算属性（从 _initial 原始值开始），
+    保留宝物加成，重置技能点为 level-1。
+    仅限非英雄武将、未编组状态使用。
+    """
+    general = _get_general_by_id(user_id, general_id)
+    if general is None:
+        return False, "武将不存在"
+
+    template = ITEM_INDEX.get(item.get("name"))
+    if template is None:
+        return False, "道具模板不存在"
+
+    ok, err = _check_general_condition(general, template.get("condition"))
+    if not ok:
+        return False, err
+
+    data = msg.get("data", {}) if msg else {}
+    new_personality = data.get("personality", "").strip()
+    if not new_personality:
+        return False, "请指定新性格"
+
+    if new_personality not in PERSONALITY_BONUS:
+        return False, f"无效的性格: {new_personality}"
+
+    old_personality = general.get("personality", "")
+    if old_personality == new_personality:
+        return False, "新性格与当前性格相同，无需重置"
+
+    level = general.get("level", 1)
+    old_bonus = PERSONALITY_BONUS.get(old_personality, {})
+    new_bonus = PERSONALITY_BONUS.get(new_personality, {})
+
+    old_stats = {
+        "force": general.get("force", 0),
+        "intelligence": general.get("intelligence", 0),
+        "charisma": general.get("charisma", 0),
+        "force_initial": general.get("force_initial", 0),
+        "intelligence_initial": general.get("intelligence_initial", 0),
+        "charisma_initial": general.get("charisma_initial", 0),
+        "skill_points": general.get("skill_points", 0),
+    }
+
+    # 从 _initial 减去旧性格加成，得到原始 level 1 基础值
+    # _initial = base + old_personality_bonus × (level - 1)
+    levels_gained = level - 1
+    base_force = general["force_initial"] - old_bonus.get("force", 0) * levels_gained
+    base_intelligence = general["intelligence_initial"] - old_bonus.get("intelligence", 0) * levels_gained
+    base_charisma = general["charisma_initial"] - old_bonus.get("charisma", 0) * levels_gained
+
+    # 宝物加成 = 当前值 - 初始值（装备宝物时仅修改当前值，不修改 _initial）
+    treasure_force = general["force"] - general["force_initial"]
+    treasure_intelligence = general["intelligence"] - general["intelligence_initial"]
+    treasure_charisma = general["charisma"] - general["charisma_initial"]
+
+    # 新 _initial = base + 新性格加成
+    new_force_initial = base_force + new_bonus.get("force", 0) * levels_gained
+    new_intelligence_initial = base_intelligence + new_bonus.get("intelligence", 0) * levels_gained
+    new_charisma_initial = base_charisma + new_bonus.get("charisma", 0) * levels_gained
+
+    # 新当前值 = 新 _initial + 宝物加成
+    new_force = new_force_initial + treasure_force
+    new_intelligence = new_intelligence_initial + treasure_intelligence
+    new_charisma = new_charisma_initial + treasure_charisma
+
+    # 重置技能点 = level - 1（1-30级每级1点，最多29点）
+    new_skill_points = min(levels_gained, 29)
+
+    updates = {
+        "personality": new_personality,
+        "force_initial": new_force_initial,
+        "intelligence_initial": new_intelligence_initial,
+        "charisma_initial": new_charisma_initial,
+        "force": new_force,
+        "intelligence": new_intelligence,
+        "charisma": new_charisma,
+        "skill_points": new_skill_points,
+    }
+
+    general["personality"] = new_personality
+    general["force_initial"] = new_force_initial
+    general["intelligence_initial"] = new_intelligence_initial
+    general["charisma_initial"] = new_charisma_initial
+    general["force"] = new_force
+    general["intelligence"] = new_intelligence
+    general["charisma"] = new_charisma
+    general["skill_points"] = new_skill_points
+
+    await update_general(general_id, updates)
+    sync_general_cache_update(general_id, updates)
+    await _consume_items(item_id, quantity)
+
+    return True, {
+        "item_id": item_id,
+        "item_name": template["name"],
+        "general_id": general_id,
+        "old_personality": old_personality,
+        "new_personality": new_personality,
+        "force_initial": {"old": old_stats["force_initial"], "new": new_force_initial},
+        "intelligence_initial": {"old": old_stats["intelligence_initial"], "new": new_intelligence_initial},
+        "charisma_initial": {"old": old_stats["charisma_initial"], "new": new_charisma_initial},
+        "force": {"old": old_stats["force"], "new": new_force},
+        "intelligence": {"old": old_stats["intelligence"], "new": new_intelligence},
+        "charisma": {"old": old_stats["charisma"], "new": new_charisma},
+        "skill_points": {"old": old_stats["skill_points"], "new": new_skill_points},
+    }
+
+
+async def _use_reset_talents(user_id, item_id, item, general_id, quantity):
+    """使用天赋重置丹：重置天赋点数与天赋等级
+    
+    所有天赋等级归零，天赋点数按等级还原（31-40级每级1点）。
+    不限制武将类型，仅需未编组状态。
+    """
+    general = _get_general_by_id(user_id, general_id)
+    if general is None:
+        return False, "武将不存在"
+
+    template = ITEM_INDEX.get(item.get("name"))
+    if template is None:
+        return False, "道具模板不存在"
+
+    ok, err = _check_general_condition(general, template.get("condition"))
+    if not ok:
+        return False, err
+
+    level = general.get("level", 1)
+    if level < 30:
+        return False, "武将等级不足30级，无天赋可重置"
+
+    old_talents = {}
+    for talent_name, db_field in TALENT_DB_FIELDS.items():
+        old_talents[db_field] = general.get(db_field, 0)
+
+    old_talent_skill = general.get("talent_skill", 0)
+
+    # 天赋点按等级还原：31-40级每级1点
+    new_talent_skill = max(0, level - 30)
+
+    updates = {"talent_skill": new_talent_skill}
+    for db_field in TALENT_DB_FIELDS.values():
+        updates[db_field] = 0
+        general[db_field] = 0
+
+    general["talent_skill"] = new_talent_skill
+
+    await update_general(general_id, updates)
+    sync_general_cache_update(general_id, updates)
+    await _consume_items(item_id, quantity)
+
+    return True, {
+        "item_id": item_id,
+        "item_name": template["name"],
+        "general_id": general_id,
+        "talent_skill": {"old": old_talent_skill, "new": new_talent_skill},
+        "talent_ygzq": {"old": old_talents["talent_ygzq"], "new": 0},
+        "talent_ygsj": {"old": old_talents["talent_ygsj"], "new": 0},
+        "talent_djzc": {"old": old_talents["talent_djzc"], "new": 0},
+        "talent_tqtb": {"old": old_talents["talent_tqtb"], "new": 0},
+    }
+
+
+async def _use_buff(user_id, item_id, item, template, general_id, quantity=1):
+    """使用武将加成类道具（buff），叠加加成值与独立计时器
+    
+    每个buff类型独立计时，存储为服务器运行毫秒时间戳。
+    持续24小时，重复使用叠加时长。
+    """
+    if quantity > 1:
+        return False, "加成类道具不支持批量使用，请逐个使用"
+
+    general = _get_general_by_id(user_id, general_id)
+    if general is None:
+        return False, "武将不存在"
+
+    ok, err = _check_general_condition(general, template.get("condition"))
+    if not ok:
+        return False, err
+
+    current_uptime = get_uptime_ms()
+    duration_ms = 24 * 3600 * 1000
+
+    effects = template["effects"]
+    updates = {}
+    for bonus_type, value in effects.items():
+        expire_field = f"{bonus_type}_expire"
+        current_expire = general.get(expire_field) or 0
+        new_expire = max(current_expire, current_uptime + duration_ms)
+        current_value = general.get(bonus_type, 0.0)
+        updates[bonus_type] = current_value + value
+        updates[expire_field] = new_expire
+
+    await update_general(general_id, updates)
+    sync_general_cache_update(general_id, updates)
+
+    await _consume_items(item_id, quantity)
+
+    return True, {
+        "item_id": item_id,
+        "item_name": template["name"],
+        "general_id": general_id,
+        "effects": [{"type": k, "value": v} for k, v in effects.items()],
+        "duration_hours": 24,
+    }
+
+
+async def use_item(user_id, item_id, general_id=None, quantity=1, msg=None):
     """使用道具，根据类别分发到对应处理函数
     :param user_id: 用户ID
     :param item_id: 道具ID
@@ -418,9 +634,15 @@ async def use_item(user_id, item_id, general_id=None, quantity=1):
         elif subcategory == "exp":
             return await _use_exp_book(user_id, item_id, item, template, general_id, quantity)
         elif subcategory == "buff":
-            return False, "武将加成类道具暂未实装"
+            return await _use_buff(user_id, item_id, item, template, general_id, quantity)
         elif subcategory == "reset":
-            return False, "武将重置类道具暂未实装"
+            reset_type = template.get("reset_type", "")
+            if reset_type == "attributes":
+                return await _use_reset_attributes(user_id, item_id, item, general_id, quantity, msg)
+            elif reset_type == "talents":
+                return await _use_reset_talents(user_id, item_id, item, general_id, quantity)
+            else:
+                return False, f"未知的重置类型: {reset_type}"
         else:
             return False, f"未知的武将道具子类型: {subcategory}"
 

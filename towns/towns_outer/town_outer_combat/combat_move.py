@@ -29,9 +29,17 @@ def get_troop_owner(troop, user_nation_cache):
     """
     获取部队所属国家编号。
     user_nation_cache: {user_id: nation_id}，NPC部队user_id为'0'时返回0。
+
+    优先级：_nation > user_nation_cache[user_id]
+    _nation 字段用于民兵（义勇军/连弩）等特殊NPC部队，
+    这些部队 user_id="0" 但需要通过 _nation 标记所属国家以正确判断敌我。
+    正常玩家部队和山贼部队不携带 _nation 字段，走原始逻辑。
     """
     if troop is None:
         return None
+    _nation = troop.get("_nation")
+    if _nation is not None:
+        return _nation
     raw_user_id = troop.get("user_id", "")
     user_id = str(raw_user_id) if raw_user_id is not None else ""
     return user_nation_cache.get(user_id, 0)
@@ -81,13 +89,20 @@ def get_troop_move_range(troop):
         count = slot.get("数量", 0)
         if count <= 0:
             continue
-        from data.troop_data import TROOP_DATA
+        from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
         for t in TROOP_DATA:
             if t["兵种名称"] == name:
                 move_range = t.get("战斗移动范围", 3)
                 if min_range is None or move_range < min_range:
                     min_range = move_range
                 break
+        else:
+            for t in TROOP_DATA_SPECIAL:
+                if t["兵种名称"] == name:
+                    move_range = t.get("战斗移动范围", 3)
+                    if min_range is None or move_range < min_range:
+                        min_range = move_range
+                    break
     base = min_range if min_range is not None else 3
     base += troop.get("_traffic_move_bonus", 0)
     return base
@@ -152,7 +167,7 @@ def _get_troop_first_slot_attack(troop, skip_zero=False):
     skip_zero=False时：遇到攻击力为0的槽位直接返回0，用于"最低攻击"目标选择。
     """
     team = troop.get("team", [])
-    from data.troop_data import TROOP_DATA
+    from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
     for slot in team:
         if slot and slot.get("兵种名称"):
             name = slot["兵种名称"]
@@ -164,6 +179,13 @@ def _get_troop_first_slot_attack(troop, skip_zero=False):
                         if atk > 0:
                             return atk * count
                         break
+                else:
+                    for t in TROOP_DATA_SPECIAL:
+                        if t["兵种名称"] == name:
+                            atk = t.get("攻击力", 0)
+                            if atk > 0:
+                                return atk * count
+                            break
                 if skip_zero:
                     continue
                 return 0
@@ -565,7 +587,7 @@ def get_attack_range(troop):
     """
     team = troop.get("team", [])
     min_range = None
-    from data.troop_data import TROOP_DATA
+    from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
     for slot in team:
         if not slot:
             continue
@@ -584,6 +606,16 @@ def get_attack_range(troop):
                 if min_range is None or ar < min_range:
                     min_range = ar
                 break
+        else:
+            for t in TROOP_DATA_SPECIAL:
+                if t["兵种名称"] == name:
+                    atk = t.get("攻击力", 0)
+                    if atk <= 0:
+                        break
+                    ar = t.get("战斗攻击范围", 1)
+                    if min_range is None or ar < min_range:
+                        min_range = ar
+                    break
     return min_range if min_range is not None else 1
 
 

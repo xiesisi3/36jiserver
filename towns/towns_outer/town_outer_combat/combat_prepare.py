@@ -17,6 +17,7 @@ from towns.towns_outer.town_outer_combat.combat_db import (
     insert_combat_history, update_combat_history,
 )
 from towns.towns_outer.town_outer_combat.combat_settlement import settle_combat
+from towns.towns_outer.town_outer_combat.militia import generate_militia_troops, cleanup_militia_troops
 from towns.towns_db import update_town_status, update_town_owner, update_town_attrs
 from troop.troop_db import update_troop
 from core.connection import broadcast
@@ -137,11 +138,13 @@ async def enter_battle_preparation(town_id):
     """
     进入战斗准备阶段（30秒预加载）。
     在此阶段：
-    1. 收集防守方（status=1的驻守部队）和已到达的进攻方（troops_arrived_at_town中的部队）
-    2. 清理城池网格，以所有参战部队的grid_pos为准重写grid
-    3. 分配城门位置给没有grid_pos的部队
-    4. 将所有参战部队存入fight_round_vars，等待预加载结束后开始第一回合
-    5. 取消该城池的所有集结计划（战斗即刻触发取消）
+    1. 根据民心生成民兵（义勇军/连弩），写入DB+cache
+    2. 收集防守方（status=1的驻守部队）和已到达的进攻方（troops_arrived_at_town中的部队）
+    3. 民兵排在最前（优先被攻击），然后是守军，最后是进攻方
+    4. 清理城池网格，以所有参战部队的grid_pos为准重写grid
+    5. 分配城门位置给没有grid_pos的部队
+    6. 将所有参战部队存入fight_round_vars，等待预加载结束后开始第一回合
+    7. 取消该城池的所有集结计划（战斗即刻触发取消）
 
     关键设计：进攻方在行军到达时已被写入grid（server_timer中add_troop_to_grid），
     此处通过_get_and_clear_arriving_troops将其纳入all_troops，确保_cleanup_town_grid
@@ -153,11 +156,17 @@ async def enter_battle_preparation(town_id):
     now_ms = get_uptime_ms()
     preload_end_ms = now_ms + PRELOAD_DURATION_MS
 
+    # 生成民兵（基于民心，仅在战斗准备阶段生成，服务器恢复时不走此路径）
+    # 民兵先写入DB和cache，grid由后续 _cleanup_town_grid 统一处理
+    town = towns_cache.get(town_id)
+    militia_troops = await generate_militia_troops(town_id, town)
+
     defenders = _get_town_defenders(town_id)
     # 获取已到达的进攻方部队（触发战斗的部队），同时清理troops_arrived_at_town
     # 这样start_first_round中再次调用时只会拿到预加载期间新到达的部队
     arriving = _get_and_clear_arriving_troops(town_id)
-    all_troops = defenders + arriving
+    # 民兵排最前，优先被攻击（进攻方默认先攻击位置靠前的部队）
+    all_troops = militia_troops + defenders + arriving
 
     await _cleanup_town_grid(town_id, all_troops)
     _assign_gate_positions(all_troops, town_id)
@@ -181,8 +190,9 @@ async def enter_battle_preparation(town_id):
         "preload_end_ms": preload_end_ms,
         "history_id": history_id,
         "_battle_troops": all_troops,
-        "_defenders": defenders,
+        "_defenders": militia_troops + defenders,
         "_arriving": arriving,
+        "_militia_troops": militia_troops,
     }
 
     for troop in all_troops:
@@ -211,7 +221,7 @@ async def enter_battle_preparation(town_id):
         "preload_end_ms": preload_end_ms,
     }))
 
-    logger.info(f"城池 {town_id} 进入战斗预加载阶段，预加载结束时间: {preload_end_ms}ms, 守军: {len(defenders)}支, 进攻方: {len(arriving)}支")
+    logger.info(f"城池 {town_id} 进入战斗预加载阶段，预加载结束时间: {preload_end_ms}ms, 民兵: {len(militia_troops)}支, 守军: {len(defenders)}支, 进攻方: {len(arriving)}支")
 
 
 def check_combat_end(town_id, battle_troops, next_round_troops):
@@ -293,10 +303,17 @@ async def finish_combat(town_id, winner, victory_type):
 
     # 存活部队状态更新：驻守、pos设为目标城池、清空目标
     battle_troops = frv.get("_battle_troops", [])
+    # 清理民兵部队（义勇军/连弩），战斗结束后全部销毁
+    # 民兵是临时部队，无论战斗胜负，战斗结束后都不保留
+    await cleanup_militia_troops(town_id, battle_troops)
     for troop in battle_troops:
         tid = troop["troop_id"]
         user_id = str(troop.get("user_id", ""))
         general_id = troop.get("general_id")
+        # 跳过民兵部队（已在上方 cleanup_militia_troops 中删除）
+        # 义勇军 general_id=-10002，连弩 general_id=-10005
+        if general_id in (-10002, -10005):
+            continue
         # 更新部队：status=1(驻守), pos=目标城池, 清空目标
         if tid in troop_cache:
             troop_cache[tid]["status"] = 1
@@ -326,6 +343,10 @@ async def finish_combat(town_id, winner, victory_type):
             for y in range(GRID_COLS):
                 grid[x][y] = []
         for troop in battle_troops:
+            # 跳过民兵部队（已在 cleanup_militia_troops 中从grid删除）
+            # 义勇军 general_id=-10002，连弩 general_id=-10005
+            if troop.get("general_id") in (-10002, -10005):
+                continue
             grid_pos = troop.get("grid_pos")
             if grid_pos and len(grid_pos) == 2:
                 gx, gy = grid_pos[0], grid_pos[1]

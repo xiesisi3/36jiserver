@@ -53,7 +53,7 @@ async def handle_item_use(websocket, client_id, msg):
         await send_message(websocket, make_response("error", "使用数量必须为正整数", ""))
         return
 
-    success, result = await use_item(user_id, item_id, general_id, quantity)
+    success, result = await use_item(user_id, item_id, general_id, quantity, msg)
     if success:
         await send_message(websocket, make_response("success", "使用成功", result))
     else:

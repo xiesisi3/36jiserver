@@ -150,11 +150,8 @@ async def handle_general_add_attr(websocket, client_id, msg):
 
     updates = {
         "force": general["force"],
-        "force_initial": general["force_initial"],
         "intelligence": general["intelligence"],
-        "intelligence_initial": general["intelligence_initial"],
         "charisma": general["charisma"],
-        "charisma_initial": general["charisma_initial"],
         "skill_points": general["skill_points"],
     }
     await update_general(general_id, updates)
@@ -201,6 +198,21 @@ async def handle_general_update_status(websocket, client_id, msg):
         updates["dest"] = dest
     if death_time is not None:
         updates["death_time"] = death_time
+
+    if status == 4:
+        updates.update({
+            "morale": 100,
+            "attack_bonus": 0.0,
+            "defense_bonus": 0.0,
+            "hp_bonus": 0.0,
+            "exp_bonus": 0.0,
+            "morale_bonus": 0.0,
+            "attack_bonus_expire": None,
+            "defense_bonus_expire": None,
+            "hp_bonus_expire": None,
+            "exp_bonus_expire": None,
+            "morale_bonus_expire": None,
+        })
 
     await update_general(general_id, updates)
 

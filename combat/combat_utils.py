@@ -3,7 +3,7 @@
 import copy
 import random
 
-from data.troop_data import TROOP_DATA
+from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
 from combat.combat_constants import (
     COUNTER_BONUS, MORALE_TO_DOUBLE_ATTACK_RATE,
     ROBBER_DIFFICULTY_CONFIG,
@@ -16,11 +16,17 @@ def get_troop_attack(troop_name):
     for t in TROOP_DATA:
         if t["兵种名称"] == troop_name:
             return t.get("攻击力", 0)
+    for t in TROOP_DATA_SPECIAL:
+        if t["兵种名称"] == troop_name:
+            return t.get("攻击力", 0)
     return 0
 
 
 def get_troop_defense(troop_name):
     for t in TROOP_DATA:
+        if t["兵种名称"] == troop_name:
+            return t.get("防御力", 0)
+    for t in TROOP_DATA_SPECIAL:
         if t["兵种名称"] == troop_name:
             return t.get("防御力", 0)
     return 0
@@ -30,11 +36,17 @@ def get_troop_hp(troop_name):
     for t in TROOP_DATA:
         if t["兵种名称"] == troop_name:
             return t.get("生命值", 0)
+    for t in TROOP_DATA_SPECIAL:
+        if t["兵种名称"] == troop_name:
+            return t.get("生命值", 0)
     return 0
 
 
 def get_troop_series(troop_name):
     for t in TROOP_DATA:
+        if t["兵种名称"] == troop_name:
+            return t.get("兵种系列", "")
+    for t in TROOP_DATA_SPECIAL:
         if t["兵种名称"] == troop_name:
             return t.get("兵种系列", "")
     return ""
@@ -66,6 +78,9 @@ def get_troop_food_cost(troop_name):
     for t in TROOP_DATA:
         if t["兵种名称"] == troop_name:
             return t.get("攻击消耗粮食", 0)
+    for t in TROOP_DATA_SPECIAL:
+        if t["兵种名称"] == troop_name:
+            return t.get("攻击消耗粮食", 0)
     return 0
 
 
@@ -73,11 +88,17 @@ def get_troop_carry_food(troop_name):
     for t in TROOP_DATA:
         if t["兵种名称"] == troop_name:
             return t.get("可携带粮食", 0)
+    for t in TROOP_DATA_SPECIAL:
+        if t["兵种名称"] == troop_name:
+            return t.get("可携带粮食", 0)
     return 0
 
 
 def get_troop_gain_exp(troop_name):
     for t in TROOP_DATA:
+        if t["兵种名称"] == troop_name:
+            return t.get("gain_exp", 0)
+    for t in TROOP_DATA_SPECIAL:
         if t["兵种名称"] == troop_name:
             return t.get("gain_exp", 0)
     return 0

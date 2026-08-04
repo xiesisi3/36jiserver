@@ -2,7 +2,7 @@
 import logging
 
 from data.global_data import towns_cache, user_nation_cache, nation_cache, user_resource_cache, troop_cache
-from data.troop_data import TROOP_DATA
+from data.troop_data import TROOP_DATA, TROOP_DATA_SPECIAL
 from data.combat_reward_config import (
     TROOP_LEVEL_SCORE, REWARD_TIERS, TICKET_SCORE, CHEST_SCORE,
     VICTORY_FACTOR, MVP_REWARD, SVP_REWARD, BUDGET_SPLIT,
@@ -28,6 +28,10 @@ def _build_troop_level_map():
         name = item.get("兵种名称")
         if name:
             level_map[name] = item.get("兵种等级", "")
+    for item in TROOP_DATA_SPECIAL:
+        name = item.get("兵种名称")
+        if name:
+            level_map[name] = item.get("兵种等级", "")
     return level_map
 
 
@@ -35,6 +39,13 @@ def _build_gain_death_exp_map():
     gain_map = {}
     death_map = {}
     for item in TROOP_DATA:
+        name = item.get("兵种名称")
+        if name:
+            if item.get("gain_exp", 0):
+                gain_map[name] = item["gain_exp"]
+            if item.get("death_exp", 0):
+                death_map[name] = item["death_exp"]
+    for item in TROOP_DATA_SPECIAL:
         name = item.get("兵种名称")
         if name:
             if item.get("gain_exp", 0):
@@ -439,10 +450,14 @@ async def settle_combat(town_id, history_id, winner, victory_type, original_town
     troop_to_user = {tid: str(info.get("u", "")) for tid, info in troop_participation.items()}
 
     # 构建部队→所属国家映射（山贼 user_id="0" 归属 nation_id=1 山贼集团）
+    # 民兵（义勇军/连弩）通过 _nation 字段标记所属国家，优先使用
     troop_to_nation = {}
     for tid, uid in troop_to_user.items():
         if uid == "0":
-            troop_to_nation[tid] = 1
+            # 检查是否为民兵（_nation 字段标记了所属国家）
+            tc = troop_cache.get(tid)
+            _n = tc.get("_nation") if isinstance(tc, dict) else None
+            troop_to_nation[tid] = _n if _n is not None else 1
         else:
             nid = user_nation_cache.get(uid)
             if nid is not None:
@@ -515,5 +530,11 @@ async def settle_combat(town_id, history_id, winner, victory_type, original_town
         if reward["score"] > 0:
             await add_combat_score(user_id, int(reward["score"]))
             await add_legion_combat_reward(user_id, reward["score"])
+
+            current_pcs = user_resource_cache.get(user_id, {}).get("personal_combat_score", 0)
+            new_pcs = current_pcs + int(reward["score"])
+            await update_user_resource_field(user_id, "personal_combat_score", new_pcs)
+            if user_id in user_resource_cache:
+                user_resource_cache[user_id]["personal_combat_score"] = new_pcs
 
     #logger.info(f"[结算] 战斗 history_id={history_id} 结算完成，共{len(rewards)}名玩家获得奖励")

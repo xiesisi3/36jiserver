@@ -60,3 +60,73 @@ TOWN_ATTR_EFFECTS = [
         "traffic": {"name": "皇家大道", "speed_multiplier": 2.00}
     }
 ]
+
+
+# ============================================================
+# 民兵（义勇军/连弩）生成配置
+# ============================================================
+# 当城池发生战斗时，民心(popular_support)会转化为民兵部队参与防御。
+# - 义勇军: 每1000民心生成3支，每支500人（每槽100人），最多30支
+# - 连弩:   超过10000民心后，每1000民心生成2支，每支150人（每槽30人），无上限
+# 两种部队同时存在，义勇军使用山贼武将ID 10002，连弩使用山贼武将ID 10005
+# 归属user_id="0"但通过_nation字段标记为城池所属国家，仅防御方生成。
+# 战斗结束后民兵部队全部销毁。
+
+MILITIA_VOLUNTEER_GENERAL_ID = 10002
+MILITIA_CROSSBOW_GENERAL_ID = 10005
+MILITIA_DEFAULT_GRID_X = 10
+MILITIA_DEFAULT_GRID_Y = 9
+
+MILITIA_VOLUNTEER = {
+    "troop_name": "义勇军",
+    "per_slot": 100,
+    "slots": 5,
+    "per_1000": 3,
+    "max": 30,
+}
+
+MILITIA_CROSSBOW = {
+    "troop_name": "连弩",
+    "per_slot": 30,
+    "slots": 5,
+    "per_1000": 2,
+    "max": None,
+    "min_popular_support": 10000,
+}
+
+
+def generate_militia_config(popular_support):
+    """
+    根据民心值计算需要生成的民兵部队配置列表。
+
+    义勇军: 每1000民心 → 3支（最多30支，即10000民心达到上限）
+    连弩:   超过10000民心后，每1000民心 → 2支，无上限
+
+    返回: [{"troop_name": "义勇军", "count": N, "per_slot": 100, "slots": 5}, ...]
+    """
+    if popular_support <= 0:
+        return []
+
+    configs = []
+
+    volunteer_count = min(MILITIA_VOLUNTEER["max"], (popular_support // 1000) * MILITIA_VOLUNTEER["per_1000"])
+    if volunteer_count > 0:
+        configs.append({
+            "troop_name": MILITIA_VOLUNTEER["troop_name"],
+            "count": volunteer_count,
+            "per_slot": MILITIA_VOLUNTEER["per_slot"],
+            "slots": MILITIA_VOLUNTEER["slots"],
+        })
+
+    excess = popular_support - MILITIA_CROSSBOW["min_popular_support"]
+    if excess > 0:
+        crossbow_count = (excess // 1000) * MILITIA_CROSSBOW["per_1000"]
+        if crossbow_count > 0:
+            configs.append({
+                "troop_name": MILITIA_CROSSBOW["troop_name"],
+                "count": crossbow_count,
+                "per_slot": MILITIA_CROSSBOW["per_slot"],
+                "slots": MILITIA_CROSSBOW["slots"],
+            })
+
+    return configs

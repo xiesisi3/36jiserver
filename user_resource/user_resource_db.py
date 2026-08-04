@@ -30,6 +30,7 @@ async def create_table():
                     road_repair_score BIGINT NOT NULL DEFAULT 0 COMMENT '修路分',
                     wall_repair_score BIGINT NOT NULL DEFAULT 0 COMMENT '修墙分',
                     robber_score BIGINT NOT NULL DEFAULT 0 COMMENT '剿匪分',
+                    personal_combat_score BIGINT NOT NULL DEFAULT 0 COMMENT '个人战斗积分',
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 )

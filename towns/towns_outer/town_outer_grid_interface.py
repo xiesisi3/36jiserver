@@ -56,7 +56,8 @@ async def handle_town_troop_list(websocket, client_id, msg):
             invalid_ids.append(tid)
             continue
         troop_data = dict(troop)
-        troop_data["nation_id"] = user_nation_cache.get(troop.get("user_id"), 1)
+        # 民兵通过 _nation 字段标记所属国家，优先使用
+        troop_data["nation_id"] = troop.get("_nation") or user_nation_cache.get(troop.get("user_id"), 1)
         general = get_general_info(troop.get("general_id"))
         if general:
             troop_data["general"] = {

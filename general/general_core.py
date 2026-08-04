@@ -381,20 +381,14 @@ def add_exp(general, gained_exp, use_wisdom=True):
                 bonus_charisma = bonus.get("charisma", 0) * skill_points_gained
 
                 if bonus_force:
-                    general["force_initial"] = general.get("force_initial", 0) + bonus_force
                     general["force"] = general.get("force", 0) + bonus_force
                 if bonus_intelligence:
-                    general["intelligence_initial"] = general.get("intelligence_initial", 0) + bonus_intelligence
                     general["intelligence"] = general.get("intelligence", 0) + bonus_intelligence
                 if bonus_charisma:
-                    general["charisma_initial"] = general.get("charisma_initial", 0) + bonus_charisma
                     general["charisma"] = general.get("charisma", 0) + bonus_charisma
 
-                updates["force_initial"] = general["force_initial"]
                 updates["force"] = general["force"]
-                updates["intelligence_initial"] = general["intelligence_initial"]
                 updates["intelligence"] = general["intelligence"]
-                updates["charisma_initial"] = general["charisma_initial"]
                 updates["charisma"] = general["charisma"]
 
         if talent_points_gained > 0:
@@ -413,14 +407,16 @@ def add_exp(general, gained_exp, use_wisdom=True):
 def add_attribute_point(general, attrs):
     """
     消耗技能点，为武将增加属性点（可同时增加多个属性）
+    注意：仅修改当前属性（force/intelligence/charisma），不修改初始属性（_initial），
+    洗髓丹等重置道具依赖 _initial 保持为 level 1 原始值。
     :param general: 武将数据字典（会直接修改）
     :param attrs: 属性分配字典，如 {"force": 2, "intelligence": 1}
     :return: (success, message)
     """
     attr_map = {
-        "force": ("force", "force_initial"),
-        "intelligence": ("intelligence", "intelligence_initial"),
-        "charisma": ("charisma", "charisma_initial"),
+        "force": "force",
+        "intelligence": "intelligence",
+        "charisma": "charisma",
     }
 
     if not isinstance(attrs, dict) or not attrs:
@@ -439,9 +435,8 @@ def add_attribute_point(general, attrs):
         return False, f"技能点不足，需要{total_points}点，当前{skill_points}点"
 
     for attr_name, count in attrs.items():
-        current_attr, initial_attr = attr_map[attr_name]
+        current_attr = attr_map[attr_name]
         general[current_attr] = general.get(current_attr, 0) + count
-        general[initial_attr] = general.get(initial_attr, 0) + count
 
     general["skill_points"] = skill_points - total_points
 
