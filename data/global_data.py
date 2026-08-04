@@ -333,6 +333,26 @@ legion_member_cache = {}
 legion_member_index = {}
 
 # ------------------------------------------------------------
+# 集结计划缓存（全内存，不存DB，服务端重启后自动清空）
+# key: plan_id (int)
+# value: {plan_id, legion_id, town_id, commander_user_id, title, remark,
+#         end_time, created_at, requirements: {主力/炮灰: {min, max}},
+#         participants: {troop_id: {user_id, role_type, joined_at}}}
+# 用途：军团指挥协作的全部逻辑
+# 生命周期：创建时增量添加，取消/到期/战斗触发时删除，服务端关闭时释放
+# ------------------------------------------------------------
+assembly_plans = {}
+
+# ------------------------------------------------------------
+# 集结部队锁定表（快速查找部队在哪个计划中）
+# key: troop_id (int)
+# value: plan_id (int)
+# 用途：解散/移动/编组等操作时快速检查是否在集结中
+# 生命周期：与 assembly_plans 同步
+# ------------------------------------------------------------
+assembly_troop_lock = {}
+
+# ------------------------------------------------------------
 # 城池战斗回合数据缓存（用于客户端播放）
 # key: town_id (int)
 # value: {

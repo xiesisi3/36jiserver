@@ -17,7 +17,7 @@ from towns.towns_outer.town_outer_combat.combat_db import (
     insert_combat_history, update_combat_history,
 )
 from towns.towns_outer.town_outer_combat.combat_settlement import settle_combat
-from towns.towns_db import update_town_status
+from towns.towns_db import update_town_status, update_town_owner, update_town_attrs
 from troop.troop_db import update_troop
 from core.connection import broadcast
 from message.protocol import make_response
@@ -141,12 +141,15 @@ async def enter_battle_preparation(town_id):
     2. 清理城池网格，以所有参战部队的grid_pos为准重写grid
     3. 分配城门位置给没有grid_pos的部队
     4. 将所有参战部队存入fight_round_vars，等待预加载结束后开始第一回合
+    5. 取消该城池的所有集结计划（战斗即刻触发取消）
 
     关键设计：进攻方在行军到达时已被写入grid（server_timer中add_troop_to_grid），
     此处通过_get_and_clear_arriving_troops将其纳入all_troops，确保_cleanup_town_grid
     保留其grid位置，从而使handle_town_troop_list在准备阶段能返回完整的部队列表。
     start_first_round中再次调用_get_and_clear_arriving_troops只会拿到预加载期间新到达的部队。
     """
+    from legion.legion_assembly import cancel_plans_at_town
+    asyncio.create_task(cancel_plans_at_town(town_id, "集结点发生战斗，集结计划自动取消"))
     now_ms = get_uptime_ms()
     preload_end_ms = now_ms + PRELOAD_DURATION_MS
 
@@ -259,6 +262,16 @@ async def finish_combat(town_id, winner, victory_type):
 
     if victory_type == "占领" and winner is not None:
         await _change_town_owner(town_id, winner)
+        towns_cache[town_id]["stability"] = 0
+        towns_cache[town_id]["defense"] = 0
+        towns_cache[town_id]["traffic"] = 0
+        towns_cache[town_id]["popular_support"] = 0
+        await update_town_attrs(town_id, {
+            "stability": 0,
+            "defense": 0,
+            "traffic": 0,
+            "popular_support": 0,
+        })
 
     now_ms = get_uptime_ms()
     end_prepare_duration = PRELOAD_DURATION_MS

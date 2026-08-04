@@ -25,7 +25,8 @@ async def create_table():
                     mine DECIMAL(4,2) DEFAULT 0.00,
                     stability INT DEFAULT 0,
                     defense INT DEFAULT 0,
-                    traffic INT DEFAULT 0
+                    traffic INT DEFAULT 0,
+                    popular_support INT DEFAULT 0
                 )
             """)
             await cur.execute("SET SESSION sql_notes = 1")
@@ -36,8 +37,8 @@ async def batch_insert_towns(towns):
     sql = (
         "INSERT INTO towns "
         "(id, pos_x, pos_y, name, name_rect_x, name_rect_y, name_rect_w, name_rect_h, "
-        "owner, level, status, forest, fertile, mine, stability, defense, traffic) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+        "owner, level, status, forest, fertile, mine, stability, defense, traffic, popular_support) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
     )
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
@@ -47,7 +48,7 @@ async def batch_insert_towns(towns):
                     t["name_rect_x"], t["name_rect_y"], t["name_rect_w"], t["name_rect_h"],
                     t["owner"], t["level"], t["status"],
                     t["forest"], t["fertile"], t["mine"],
-                    t["stability"], t["defense"], t["traffic"],
+                    t["stability"], t["defense"], t["traffic"], t.get("popular_support", 0),
                 )
                 for t in towns
             ])
@@ -94,13 +95,13 @@ async def batch_update_town_levels(updates):
     pool = get_pool()
     sql = (
         "UPDATE towns SET level = %s, forest = %s, fertile = %s, mine = %s, "
-        "stability = %s, defense = %s, traffic = %s WHERE id = %s"
+        "stability = %s, defense = %s, traffic = %s, popular_support = %s WHERE id = %s"
     )
     async with pool.acquire() as conn:
         async with conn.cursor() as cur:
             await cur.executemany(sql, [
                 (u["level"], u["forest"], u["fertile"], u["mine"],
-                 u["stability"], u["defense"], u["traffic"], u["id"])
+                 u["stability"], u["defense"], u["traffic"], u.get("popular_support", 0), u["id"])
                 for u in updates
             ])
 
@@ -123,5 +124,36 @@ async def update_town_owner(town_id, owner):
             await cur.execute(
                 "UPDATE towns SET owner = %s WHERE id = %s",
                 (owner, town_id)
+            )
+            return cur.rowcount
+
+
+async def update_town_attrs(town_id, updates):
+    set_clauses = []
+    values = []
+    for key in ("stability", "defense", "traffic", "popular_support"):
+        if key in updates:
+            set_clauses.append(f"{key} = %s")
+            values.append(updates[key])
+    if not set_clauses:
+        return 0
+    values.append(town_id)
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                f"UPDATE towns SET {', '.join(set_clauses)} WHERE id = %s",
+                values
+            )
+            return cur.rowcount
+
+
+async def update_town_popular_support(town_id, popular_support):
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE towns SET popular_support = %s WHERE id = %s",
+                (popular_support, town_id)
             )
             return cur.rowcount

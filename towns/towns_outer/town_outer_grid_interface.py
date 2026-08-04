@@ -30,6 +30,7 @@ async def handle_town_troop_list(websocket, client_id, msg):
         await send_message(websocket, make_response("error", "缺少城池ID", ""))
         return
 
+    user_id = clients.get(client_id, {}).get("user_id")
     grid = town_outer_grid_cache.get(town_id)
     if grid is None:
         await send_message(websocket, make_response("error", "该城池外城网格数据不存在", ""))
@@ -68,6 +69,28 @@ async def handle_town_troop_list(websocket, client_id, msg):
         else:
             troop_data["general"] = None
         troops.append(troop_data)
+
+    from legion.legion_assembly import get_assembly_flag_for_town
+    from data.global_data import legion_member_cache
+    if user_id:
+        member = legion_member_cache.get(user_id)
+        if member:
+            assembly_plan_id = get_assembly_flag_for_town(member["legion_id"], town_id)
+            if assembly_plan_id:
+                for t in troops:
+                    tid = t.get("id")
+                    from legion.legion_assembly import get_assembly_flag_for_troop
+                    flag = get_assembly_flag_for_troop(tid)
+                    t["assembly_plan_id"] = flag if flag == assembly_plan_id else None
+            else:
+                for t in troops:
+                    t["assembly_plan_id"] = None
+        else:
+            for t in troops:
+                t["assembly_plan_id"] = None
+    else:
+        for t in troops:
+            t["assembly_plan_id"] = None
 
     # 兜底清理：将pos不匹配或已不存在的部队从网格中移除，防止脏数据累积
     if invalid_ids:

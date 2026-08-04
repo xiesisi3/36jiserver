@@ -46,6 +46,7 @@ ROBBER_DIFFICULTY_CONFIG = {
             {"兵种名称": "运输兵", "数量": 2},
         ],
         "exp_mult": 0.5,
+        "stability_factor": 1.0,
     },
     "简单": {
         "general_name": "山贼",
@@ -61,6 +62,7 @@ ROBBER_DIFFICULTY_CONFIG = {
             {"兵种名称": "运输兵", "数量": 10},
         ],
         "exp_mult": 0.8,
+        "stability_factor": 1.2,
     },
     "普通": {
         "general_name": "山贼",
@@ -76,6 +78,7 @@ ROBBER_DIFFICULTY_CONFIG = {
             {"兵种名称": "运输兵", "数量": 20},
         ],
         "exp_mult": 1.0,
+        "stability_factor": 1.5,
     },
     "困难": {
         "general_name": "山贼",
@@ -91,6 +94,7 @@ ROBBER_DIFFICULTY_CONFIG = {
             {"兵种名称": "运输兵", "数量": 20},
         ],
         "exp_mult": 1.5,
+        "stability_factor": 2.0,
     },
     "极难": {
         "general_name": "山贼",
@@ -106,6 +110,7 @@ ROBBER_DIFFICULTY_CONFIG = {
             {"兵种名称": "运输兵", "数量": 40},
         ],
         "exp_mult": 2.0,
+        "stability_factor": 2.5,
     },
 }
 

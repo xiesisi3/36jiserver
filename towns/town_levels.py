@@ -19,17 +19,17 @@ ROWS = (MAP_HEIGHT - MARGIN * 2) // CELL_HEIGHT
 
 LEVEL_ATTRS = {
     1:  {"forest": (0.60, 0.60), "fertile": (0.60, 0.60), "mine": (0.60, 0.60),
-         "stability": 10000, "defense": 10000, "traffic": 10000},
+         "stability": 10000, "defense": 10000, "traffic": 10000, "popular_support": 0},
     2:  {"forest": (0.89, 0.99), "fertile": (0.89, 0.99), "mine": (0.89, 0.99),
-         "stability": 0, "defense": 0, "traffic": 0},
+         "stability": 0, "defense": 0, "traffic": 0, "popular_support": 0},
     3:  {"forest": (1.09, 1.19), "fertile": (1.09, 1.19), "mine": (1.09, 1.19),
-         "stability": 0, "defense": 0, "traffic": 0},
+         "stability": 0, "defense": 0, "traffic": 0, "popular_support": 0},
     4:  {"forest": (1.49, 1.59), "fertile": (1.49, 1.59), "mine": (1.49, 1.59),
-         "stability": 0, "defense": 0, "traffic": 0},
+         "stability": 0, "defense": 0, "traffic": 0, "popular_support": 0},
     5:  {"forest": (1.99, 2.09), "fertile": (1.99, 2.09), "mine": (1.99, 2.09),
-         "stability": 0, "defense": 0, "traffic": 0},
+         "stability": 0, "defense": 0, "traffic": 0, "popular_support": 0},
     6:  {"forest": (2.49, 2.59), "fertile": (2.49, 2.59), "mine": (2.49, 2.59),
-         "stability": 0, "defense": 100000, "traffic": 0},
+         "stability": 0, "defense": 100000, "traffic": 0, "popular_support": 0},
 }
 
 

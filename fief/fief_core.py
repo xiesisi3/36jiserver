@@ -1380,7 +1380,14 @@ def _check_and_apply_income(fief_id, minutes_elapsed):
     acc["wood"] += income["wood"] * minutes_elapsed / 60.0
     acc["grain"] += income["grain"] * minutes_elapsed / 60.0
     acc["iron"] += income["iron"] * minutes_elapsed / 60.0
-    acc["copper"] += income["copper"] * minutes_elapsed / 60.0
+
+    town = towns_cache.get(fief.get("town_id"))
+    copper_bonus = 1.0
+    if town:
+        stability = town.get("stability", 0)
+        stability_tier = min(stability // 10000, 9)
+        copper_bonus = 1.0 + stability_tier * 0.10
+    acc["copper"] += income["copper"] * copper_bonus * minutes_elapsed / 60.0
 
     changed = False
     if acc["wood"] >= 1.0:

@@ -64,6 +64,15 @@ def _prepare_attack_stats(attacker, att_slot, defender, def_slot):
 
     attack_power = get_troop_attack(attacker_troop_name) * get_tech_attack_multiplier(attacker.get("user_id", ""), attacker_troop_name)
     defense = get_troop_defense(defender_troop_name)
+
+    town_defense_attack_bonus = attacker.get("_town_defense_attack_bonus", 0)
+    if town_defense_attack_bonus:
+        attack_power *= (1 + town_defense_attack_bonus)
+
+    town_defense_defense_bonus = defender.get("_town_defense_defense_bonus", 0)
+    if town_defense_defense_bonus:
+        defense *= (1 + town_defense_defense_bonus)
+
     hp = get_troop_hp(defender_troop_name)
 
     attacker_general = attacker["general"]
@@ -121,6 +130,8 @@ def _compute_damage_and_apply(attacker, att_slot, defender, def_slot, effect):
         damage = math.floor(numerator / denominator)
 
     killed = min(damage, defender_count)
+
+    killed = max(0, killed)
     defender_slot["数量"] -= killed
 
     defender_troop_name = defender_slot.get("兵种名称", "")

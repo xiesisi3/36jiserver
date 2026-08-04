@@ -11,7 +11,7 @@ from message.protocol import make_response
 from message.combat_guard import require_town_peace
 from data.global_data import (
     troop_cache, generals_cache, user_resource_cache, clients,
-    robber_daily,
+    robber_daily, towns_cache,
 )
 from combat.combat_constants import (
     ROBBER_DIFFICULTY_CONFIG, ROBBER_DAILY_LIMIT,
@@ -27,6 +27,7 @@ from troop.troop_utils import calculate_total_troops
 from general.general_db import update_general
 from general.general_core import add_exp, sync_cache_update
 from user_resource.user_resource_db import update_user_resource_field
+from towns.towns_db import update_town_attrs
 
 logger = logging.getLogger('36ji-server')
 
@@ -171,6 +172,47 @@ async def handle_robber_fight(websocket, client_id, msg):
     troop["team"] = updated_player["team"]
     troop["food"] = updated_player["food"]
 
+    town = towns_cache.get(town_id)
+    town_stability_old = town.get("stability", 0) if town else 0
+    town_popular_old = town.get("popular_support", 0) if town else 0
+    town_stability_new = town_stability_old
+    town_popular_new = town_popular_old
+    stability_gain = 0
+
+    if town and battle_result["result"].get("w") == 1:
+        enemy_initial = battle_result["init"]["R"][0]["c"]
+        enemy_final = battle_result["result"]["ec"]
+        enemy_killed = enemy_initial - enemy_final
+
+        cfg = ROBBER_DIFFICULTY_CONFIG.get(difficulty, {})
+        stability_factor = cfg.get("stability_factor", 1.0)
+
+        stability_gain = int(stability_factor * enemy_killed)
+        if stability_gain > 0:
+            town_stability_new = min(town_stability_old + stability_gain, 100000)
+            town["stability"] = town_stability_new
+
+        if town_popular_old < 10000:
+            popular_gain = stability_gain // 10
+            if popular_gain > 0:
+                town_popular_new = min(town_popular_old + popular_gain, 10000)
+                town["popular_support"] = town_popular_new
+
+        if stability_gain > 0:
+            await update_town_attrs(town_id, {
+                "stability": town_stability_new,
+                "popular_support": town_popular_new,
+            })
+
+    resource = user_resource_cache.get(user_id)
+    robber_score_old = resource.get("robber_score", 0) if resource else 0
+    robber_score_new = robber_score_old + stability_gain
+    if resource and stability_gain > 0:
+        await update_user_resource_field(user_id, "robber_score", robber_score_new)
+        user_resource_cache[user_id]["robber_score"] = robber_score_new
+    else:
+        robber_score_new = robber_score_old
+
     result_data = copy.deepcopy(battle_result["result"])
     result_data["e"] = total_exp
 
@@ -188,6 +230,14 @@ async def handle_robber_fight(websocket, client_id, msg):
         "troop": {
             "food": updated_player["food"],
             "team": [s.get("数量", 0) if s else 0 for s in updated_player["team"]],
+        },
+        "town_attrs": {
+            "stability": town_stability_new,
+            "popular_support": town_popular_new,
+        },
+        "robber_score": {
+            "old": robber_score_old,
+            "new": robber_score_new,
         },
     }
 

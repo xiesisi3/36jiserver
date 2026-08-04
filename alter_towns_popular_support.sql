@@ -1,0 +1,1 @@
+ALTER TABLE towns ADD COLUMN popular_support INT DEFAULT 0 COMMENT '民心，0~20000，通过修路/修墙/剿匪提升';

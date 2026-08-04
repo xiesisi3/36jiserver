@@ -5,6 +5,11 @@ from legion.legion_core import (
     unlock_legion_stage, exchange_legion_item, get_legion_exchange_items,
     use_pearl_on_fief, get_legion_stage_list, get_legion_stage_detail,
 )
+from legion.legion_assembly import (
+    create_assembly, cancel_assembly, update_assembly,
+    get_assembly_list, get_assembly_detail,
+    join_assembly, leave_assembly, dispatch_assembly,
+)
 from data.global_data import user_nation_cache, legion_member_cache
 from core.connection import send_message
 from message.protocol import make_response
@@ -281,5 +286,183 @@ async def handle_legion_stage_detail(websocket, client_id, msg):
     ok, result = get_legion_stage_detail(user_id, category)
     if ok:
         await send_message(websocket, make_response("success", "阶段详情", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_create(websocket, client_id, msg):
+    """创建集结计划"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    town_id = data.get("town_id")
+    title = (data.get("title") or "").strip()
+    remark = (data.get("remark") or "").strip()
+    end_time = data.get("end_time")
+    main_min = data.get("main_min", 0)
+    main_max = data.get("main_max", 999999)
+    fodder_min = data.get("fodder_min", 0)
+    fodder_max = data.get("fodder_max", 999999)
+
+    if not user_id or not town_id or not title or not end_time:
+        await send_message(websocket, make_response("error", "缺少必要参数", ""))
+        return
+
+    ok, result = create_assembly(
+        user_id, int(town_id), title, remark, float(end_time),
+        int(main_min), int(main_max), int(fodder_min), int(fodder_max),
+    )
+    if ok:
+        await send_message(websocket, make_response("success", "集结计划创建成功", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_cancel(websocket, client_id, msg):
+    """取消集结计划"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    plan_id = data.get("plan_id")
+
+    if not user_id or not plan_id:
+        await send_message(websocket, make_response("error", "缺少必要参数", ""))
+        return
+
+    ok, result = cancel_assembly(user_id, int(plan_id))
+    if ok:
+        await send_message(websocket, make_response("success", "集结计划已取消", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_update(websocket, client_id, msg):
+    """修改集结计划人数限制"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    plan_id = data.get("plan_id")
+    main_min = data.get("main_min")
+    main_max = data.get("main_max")
+    fodder_min = data.get("fodder_min")
+    fodder_max = data.get("fodder_max")
+
+    if not user_id or not plan_id:
+        await send_message(websocket, make_response("error", "缺少必要参数", ""))
+        return
+
+    if main_min is None or main_max is None or fodder_min is None or fodder_max is None:
+        await send_message(websocket, make_response("error", "缺少人数限制参数", ""))
+        return
+
+    ok, result = update_assembly(
+        user_id, int(plan_id),
+        int(main_min), int(main_max), int(fodder_min), int(fodder_max),
+    )
+    if ok:
+        await send_message(websocket, make_response("success", "集结计划已更新", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_list(websocket, client_id, msg):
+    """查询军团所有集结计划"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    if not user_id:
+        await send_message(websocket, make_response("error", "参数解析失败", ""))
+        return
+
+    ok, result = get_assembly_list(user_id)
+    if ok:
+        await send_message(websocket, make_response("success", "集结计划列表", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_detail(websocket, client_id, msg):
+    """查询单个集结计划详情"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    plan_id = data.get("plan_id")
+
+    if not user_id or not plan_id:
+        await send_message(websocket, make_response("error", "缺少必要参数", ""))
+        return
+
+    ok, result = get_assembly_detail(user_id, int(plan_id))
+    if ok:
+        await send_message(websocket, make_response("success", "集结计划详情", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_join(websocket, client_id, msg):
+    """参与集结"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    plan_id = data.get("plan_id")
+    troops = data.get("troops", [])
+
+    if not user_id or not plan_id:
+        await send_message(websocket, make_response("error", "缺少必要参数", ""))
+        return
+
+    if not troops:
+        await send_message(websocket, make_response("error", "请指定参与的部队", ""))
+        return
+
+    ok, result = join_assembly(user_id, int(plan_id), troops)
+    if ok:
+        await send_message(websocket, make_response("success", "参与集结成功", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_leave(websocket, client_id, msg):
+    """退出集结"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    plan_id = data.get("plan_id")
+    troop_ids = data.get("troop_ids", [])
+
+    if not user_id or not plan_id:
+        await send_message(websocket, make_response("error", "缺少必要参数", ""))
+        return
+
+    if not troop_ids:
+        await send_message(websocket, make_response("error", "请指定要退出的部队", ""))
+        return
+
+    ok, result = leave_assembly(user_id, int(plan_id), [int(t) for t in troop_ids])
+    if ok:
+        await send_message(websocket, make_response("success", "退出集结成功", result))
+    else:
+        await send_message(websocket, make_response("error", result, ""))
+
+
+async def handle_assembly_dispatch(websocket, client_id, msg):
+    """指挥出征"""
+    data = msg.get("data", {})
+    user_id = data.get("user_id")
+    plan_id = data.get("plan_id")
+    target_town_id = data.get("target_town_id")
+    troop_ids = data.get("troop_ids", [])
+    accel = data.get("accel", 0)
+    custom_arrive_time = data.get("custom_arrive_time")
+    troop_accels = data.get("troop_accels")
+
+    if not user_id or not plan_id or not target_town_id:
+        await send_message(websocket, make_response("error", "缺少必要参数", ""))
+        return
+
+    if not troop_ids:
+        await send_message(websocket, make_response("error", "请指定出征部队", ""))
+        return
+
+    ok, result = await dispatch_assembly(
+        user_id, int(plan_id), int(target_town_id),
+        [int(t) for t in troop_ids],
+        int(accel), custom_arrive_time, troop_accels,
+    )
+    if ok:
+        await send_message(websocket, make_response("success", "出征成功", result))
     else:
         await send_message(websocket, make_response("error", result, ""))

@@ -27,6 +27,7 @@ from towns.towns_inner.towns_inner_recruit import (
 )
 from towns.towns_inner.towns_inner_robber import handle_robber_fight, handle_robber_quota
 from towns.towns_inner.towns_inner_market import handle_market_exchange
+from towns.towns_inner.towns_inner_repair import handle_town_repair
 from notification.notification_interface import (
     handle_message_list,
     handle_message_detail,
@@ -111,6 +112,14 @@ from legion.legion_interface import (
     handle_pearl_use,
     handle_legion_stage_list,
     handle_legion_stage_detail,
+    handle_assembly_create,
+    handle_assembly_cancel,
+    handle_assembly_update,
+    handle_assembly_list,
+    handle_assembly_detail,
+    handle_assembly_join,
+    handle_assembly_leave,
+    handle_assembly_dispatch,
 )
 
 logger = logging.getLogger('36ji-server')
@@ -140,6 +149,7 @@ HANDLERS = {
     "robber_quota": handle_robber_quota,
     "robber_fight": handle_robber_fight,
     "market_exchange": handle_market_exchange,
+    "town_repair": handle_town_repair,
     "general_add_exp": handle_general_add_exp,
     "general_add_attr": handle_general_add_attr,
     "general_update_status": handle_general_update_status,
@@ -221,6 +231,14 @@ HANDLERS = {
     "pearl_use": handle_pearl_use,
     "legion_stage_list": handle_legion_stage_list,
     "legion_stage_detail": handle_legion_stage_detail,
+    "assembly_create": handle_assembly_create,
+    "assembly_cancel": handle_assembly_cancel,
+    "assembly_update": handle_assembly_update,
+    "assembly_list": handle_assembly_list,
+    "assembly_detail": handle_assembly_detail,
+    "assembly_join": handle_assembly_join,
+    "assembly_leave": handle_assembly_leave,
+    "assembly_dispatch": handle_assembly_dispatch,
 }
 
 

@@ -4,6 +4,7 @@ import random
 
 from server_timer.server_timer_core import get_uptime_ms
 from data.global_data import towns_cache, troop_cache, fight_round_vars, user_nation_cache
+from data.town_attr_data import TOWN_ATTR_EFFECTS
 from towns.towns_outer.town_outer_grid_core import _calculate_gate_positions
 from towns.towns_outer.town_outer_combat.combat_move import (
     GRID_ROWS, GRID_COLS, DIRECTIONS, is_valid_cell,
@@ -444,6 +445,30 @@ def process_round_logic(town_id, battle_troops, round_num):
     attack_sequences = {}
     state_snapshots = []
     sim_troops = {tid: copy.deepcopy(t) for tid, t in id_to_dynamic.items()}
+
+    town = towns_cache.get(town_id) if town_id else None
+    if town:
+        town_defense = town.get("defense", 0)
+        town_traffic = town.get("traffic", 0)
+        town_owner = town.get("owner", 1)
+
+        defense_tier = min(town_defense // 10000, 9)
+        defense_effect = TOWN_ATTR_EFFECTS[defense_tier]["defense"]
+        attack_bonus = defense_effect["attack_bonus"]
+        defense_bonus = defense_effect["defense_bonus"]
+
+        traffic_tier = min(town_traffic // 10000, 9)
+        traffic_move_bonus = 1 if traffic_tier >= 9 else 0
+
+        for tid, st in sim_troops.items():
+            user_id = str(st.get("user_id", "")) if st.get("user_id") is not None else ""
+            st_nation = user_nation_cache.get(user_id, 0)
+            if st_nation == town_owner:
+                st["_town_defense_attack_bonus"] = attack_bonus
+                st["_town_defense_defense_bonus"] = defense_bonus
+                if traffic_move_bonus:
+                    st["_traffic_move_bonus"] = traffic_move_bonus
+
     general_kills = {}
     eliminated_troops = {}
 

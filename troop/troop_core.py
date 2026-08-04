@@ -204,6 +204,10 @@ async def dismiss_troop(user_id, troop_id):
     if troop["user_id"] != user_id:
         return False, "部队不属于该用户"
 
+    from data.global_data import assembly_troop_lock
+    if troop_id in assembly_troop_lock:
+        return False, "部队正在集结中，无法解散"
+
     pos = troop["pos"]
     fief_id, fief = _get_fief_by_user_and_town(user_id, pos)
     if fief_id is None:
@@ -268,6 +272,10 @@ async def update_troop(user_id, troop_id, team, food, target_type=None):
 
     if troop["user_id"] != user_id:
         return False, "部队不属于该用户"
+
+    from data.global_data import assembly_troop_lock
+    if troop_id in assembly_troop_lock:
+        return False, "部队正在集结中，无法修改编组"
 
     status = troop.get("status", 0)
     if status == 3:
@@ -422,10 +430,13 @@ async def update_troop(user_id, troop_id, team, food, target_type=None):
 
 
 def get_user_troop_list(user_id):
+    from data.global_data import assembly_troop_lock
     result = []
     for tid, troop in troop_cache.items():
         if troop["user_id"] == user_id:
-            result.append(dict(troop))
+            t = dict(troop)
+            t["assembly_plan_id"] = assembly_troop_lock.get(tid)
+            result.append(t)
     return result
 
 
@@ -440,6 +451,10 @@ async def move_troop(user_id, troop_id, new_grid_x, new_grid_y):
 
     if troop["user_id"] != user_id:
         return False, "部队不属于该用户"
+
+    from data.global_data import assembly_troop_lock
+    if troop_id in assembly_troop_lock:
+        return False, "部队正在集结中，无法移动"
 
     if troop.get("status") != 1:
         return False, "部队当前状态无法移动"
@@ -480,6 +495,10 @@ async def swap_troops(user_id, troop_id_a, team_a, food_a, troop_id_b, team_b, f
 
     if troop_a["user_id"] != user_id or troop_b["user_id"] != user_id:
         return False, "部队不属于该用户"
+
+    from data.global_data import assembly_troop_lock
+    if troop_id_a in assembly_troop_lock or troop_id_b in assembly_troop_lock:
+        return False, "部队正在集结中，无法交换编组"
 
     if troop_a.get("status") != 1 or troop_b.get("status") != 1:
         return False, "部队当前状态无法交换"

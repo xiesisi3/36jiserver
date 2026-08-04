@@ -83,6 +83,7 @@ async def init_town_levels():
             "stability": attrs["stability"],
             "defense": attrs["defense"],
             "traffic": attrs["traffic"],
+            "popular_support": attrs["popular_support"],
         })
         if tid in towns_cache:
             towns_cache[tid]["level"] = lv
@@ -92,6 +93,7 @@ async def init_town_levels():
             towns_cache[tid]["stability"] = updates[-1]["stability"]
             towns_cache[tid]["defense"] = updates[-1]["defense"]
             towns_cache[tid]["traffic"] = updates[-1]["traffic"]
+            towns_cache[tid]["popular_support"] = updates[-1]["popular_support"]
 
     await batch_update_town_levels(updates)
     logger.info(f"城池等级与属性初始化完成，共 {len(updates)} 城")

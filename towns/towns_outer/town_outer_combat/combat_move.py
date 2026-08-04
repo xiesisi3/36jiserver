@@ -66,6 +66,9 @@ def get_troop_move_range(troop):
     """
     获取部队的移动范围（取所有存活槽位中移动范围的最小值）。
     因为部队整体移动受最慢兵种限制。
+
+    注意：防守方部队在城池交通值为最高档位（皇家大道，90000-100000）时，
+    移动力+1，该加成由 process_round_logic 在战斗开始前通过 _traffic_move_bonus 字段注入。
     """
     team = troop.get("team", [])
     min_range = None
@@ -85,7 +88,9 @@ def get_troop_move_range(troop):
                 if min_range is None or move_range < min_range:
                     min_range = move_range
                 break
-    return min_range if min_range is not None else 3
+    base = min_range if min_range is not None else 3
+    base += troop.get("_traffic_move_bonus", 0)
+    return base
 
 
 def _bfs_full_range(start_pos, unmovable_set, max_range):

@@ -32,6 +32,7 @@ def generate_town_attributes(town_id):
         "stability": 0,
         "defense": 0,
         "traffic": 0,
+        "popular_support": 0,
     }
 
 

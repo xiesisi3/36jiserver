@@ -27,6 +27,9 @@ async def create_table():
                     red_iron BIGINT NOT NULL DEFAULT 0 COMMENT '赤铁（强化神兵材料）',
                     books BIGINT NOT NULL DEFAULT 0 COMMENT '书籍（强化宝典材料）',
                     flint BIGINT NOT NULL DEFAULT 0 COMMENT '燧石（强化神器材料）',
+                    road_repair_score BIGINT NOT NULL DEFAULT 0 COMMENT '修路分',
+                    wall_repair_score BIGINT NOT NULL DEFAULT 0 COMMENT '修墙分',
+                    robber_score BIGINT NOT NULL DEFAULT 0 COMMENT '剿匪分',
                     create_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     update_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                 )
@@ -90,7 +93,7 @@ async def update_user_resource_field(user_id, field_name, value, conn=None):
     """更新用户资源表的单个字段（如 copper、gold 等）
     field_name: 字段名（仅允许白名单字段，防止 SQL 注入）
     """
-    allowed_fields = {"copper", "gold", "wood", "grain", "iron", "merit", "nation_contribution", "red_iron", "books", "flint"}
+    allowed_fields = {"copper", "gold", "wood", "grain", "iron", "merit", "nation_contribution", "red_iron", "books", "flint", "road_repair_score", "wall_repair_score", "robber_score"}
     if field_name not in allowed_fields:
         raise ValueError(f"不允许更新的字段: {field_name}")
 
